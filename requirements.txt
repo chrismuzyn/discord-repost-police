@@ -1,0 +1,6 @@
+discord.py
+python-dotenv
+psycopg2
+urllib3
+onnxruntime
+Pillow

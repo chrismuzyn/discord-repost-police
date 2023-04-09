@@ -1,4 +1,4 @@
-.DS_Store
-bot-settings.json
+files/
 .env
-node_modules
+apple-neuralhash
+repost-police-env
