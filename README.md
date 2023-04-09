@@ -31,7 +31,7 @@ Install docker for your platform then:
 See the Dockerfile for instructions.
 
 # Acknowledgements
-Thanks to AsuharietYgvar for https://github.com/AsuharietYgvar/AppleNeuralHash2ONNX
+Thanks to AsuharietYgvar for instructions on how to export the apple neuralhash algorithm: https://github.com/AsuharietYgvar/AppleNeuralHash2ONNX
 
 Thanks to Zach Freedman for his insult generator: https://github.com/ZackFreedman/text-generators
 
