@@ -32,4 +32,6 @@ See the Dockerfile for instructions.
 # Acknowledgements
 Thanks to AsuharietYgvar for https://github.com/AsuharietYgvar/AppleNeuralHash2ONNX
 
+Thanks to Zach Freedman for his insult generator: https://github.com/ZackFreedman/text-generators
+
 Thanks to Apple for putting CSAM on everyones Mac/Iphone.
