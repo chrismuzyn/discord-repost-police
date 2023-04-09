@@ -4,6 +4,7 @@ The purpose of this discord bot is to identify links and images that have been p
 
 ## Future Features
 - the option to delete the offending repost and dm the offendor with an explanation
+- only look for reposts inside of a configurable swath of time
 - hashing all attachment types, not just images
 
 # Installation
