@@ -8,7 +8,7 @@ The purpose of this discord bot is to identify links and images that have been p
 
 # Installation
 ### Prerequisites
-1. This bot uses a reverse engineered apple csam/neuralhash that you must source yourself and place in the local directory apple-neuralhash.  I was able to source this from an Intel Macbook.  Instructions to do so are here: https://github.com/AsuharietYgvar/AppleNeuralHash2ONNX
+1. This bot uses the apple csam/neuralhash that you must source yourself and place in the local directory apple-neuralhash.  THIS REPOSITORY DOES NOT DISTRIBUTE THE MODEL.  I was able to source this from an Intel Macbook.  Instructions to do so are here: https://github.com/AsuharietYgvar/AppleNeuralHash2ONNX
 
 You could use a different visual hash algorithm if you wish, and replace the function neuralhash in the python script.
 
