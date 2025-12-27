@@ -2,3 +2,6 @@ files/
 .env
 apple-neuralhash
 repost-police-env
+venv
+text-generators
+__pycache__/

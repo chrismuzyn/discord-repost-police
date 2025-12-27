@@ -2,8 +2,11 @@ import discord
 from discord.ext import commands
 import os
 import hashlib
+import asyncio
+import base64
 import psycopg2
 import random
+import datetime
 import onnxruntime
 import numpy
 import io
@@ -22,19 +25,12 @@ DB_HOSTNAME = os.getenv("DB_HOSTNAME")
 
 #set intents
 intents = discord.Intents.all()
+#disc_client = discord.Client(intents=intents)
 disc_client = commands.Bot(intents=intents, command_prefix='/')
 
 # Set up etcd client and constants
 db_conn = psycopg2.connect(database=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOSTNAME, port=5432)
 db_cursor = db_conn.cursor()
-
-##hopefully get rid of all autocompletes
-#async def clear_all_commands(guild):
-#  await disc_client.tree.sync()
-#  if hasattr(disc_client, 'tree'):
-#      disc_client.tree.clear_commands(guild=guild)
-#  else:
-#      print("Tree not found. No tree to clear.")
 
 # create table if it does not exist
 with db_conn.cursor() as cur:
@@ -65,6 +61,7 @@ def neuralhash(attachment):
         print("Not an image or couldn't open image.")
         return 'n'
 
+    #image = Image.open(io.BytesIO(attachment)).convert('RGB')
     image = image.resize([360, 360])
     arr = numpy.array(image).astype(numpy.float32) / 255.0
     arr = arr * 2.0 - 1.0
@@ -90,10 +87,8 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
             off_message = await off_channel.fetch_message(existing_message[0])
         except Exception as e:
             #the message probably got deleted
+            #await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
             print("Inserting image that we can't find anymore.")
-            await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
-            db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
-            db_conn.commit()
             db_cursor.execute(
                 #'INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id) VALUES (%s, %s, %s, %s, %s)',
                 #(md5_hash, visual_hash, server_id, channel_id, message_id)
@@ -110,25 +105,6 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
             (md5_hash, visual_hash, server_id, channel_id, message_id, message_date)
         )
 
-        original_msg_url = off_message.jump_url
-        insult = hit_me()
-        if visual_hash != 'l':
-            possible_responses = [
-                "Here's the original post that was probably also from reddit, you {0}.".format(insult),
-                "Do you both browse reddit together, you {0}.".format(insult),
-                "You {0}, do you even read this chat?".format(insult),
-                "Ya, I'm gonna have to bring you down to the station.",
-                "Fucking {0}.".format(insult) ]
-            response = random.choice(possible_responses)
-        else:
-            possible_responses = ["You {0}, do you even read this chat?".format(insult), "Ya, I'm gonna have to bring you down to the station.", "Fucking {0}.".format(insult)]
-            if "reddit.com" in word:
-                response = "Is reddit down for anybody else?"
-            else:
-                response = random.choice(possible_responses)
-
-        await message.reply("🚨🚨🚨\n{0}\n{1}".format(response,original_msg_url))
-
     else:
         print("Inserting new image.")
         db_cursor.execute(
@@ -139,27 +115,16 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
         )
         db_conn.commit()
 
-@disc_client.event
-async def on_ready():
-    print('Logged in as {0.user}'.format(disc_client))
 
-#async def clear_commands():
-#    #once we had another bot use this key so the commands existed from another application. clear them
-#    for guild in disc_client.guilds:
-#      await clear_all_commands(guild)
+async def process_message(message):
+    if message.author == disc_client.user or message.author.bot:
+        pass  # Ignore messages from the bot itself and bots
 
-@disc_client.event
-async def on_message(message):
-    if message.author == disc_client.user:
-        return # Ignore messages from the bot itself
-    if message.author.bot:
-        return # Ignore messages from bots
-
-    #check message for links
+    # check message for links
     for word in message.content.split():
         if urlparse(word.lower()).hostname:
-            #we are dealing with a live link, not to be confused with a live leak
-            #do not bother with links that do not have significant paths
+            # we are dealing with a live link, not to be confused with a live leak
+            # do not bother with links that do not have significant paths
             if len(urlparse(word.lower()).path) > 4:
                 if "discord.com" not in urlparse(word.lower()).hostname:
                     md5_hash = hashlib.md5(word.lower().encode()).hexdigest()
@@ -174,7 +139,7 @@ async def on_message(message):
     if len(message.attachments) > 0:
         for attachment in message.attachments:
             md5_hash = hashlib.md5(await attachment.read()).hexdigest()
-            #if attachment is photo
+            # if attachment is photo
             visual_hash = neuralhash(await attachment.read())
             server_id = message.guild.id
             channel_id = message.channel.id
@@ -183,5 +148,19 @@ async def on_message(message):
 
             await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "")
 
+async def fetch_messages(channel):
+    try:
+        async for message in channel.history(limit=None):
+            await process_message(message)
+    except:
+        print("Couldn't read channel.")
+
+@disc_client.event
+async def on_ready():
+    print('Logged in as {0.user}'.format(disc_client))
+    for guild in disc_client.guilds:
+        for channel in guild.text_channels:
+            await fetch_messages(channel)
+    
 disc_client.run(DISCORD_TOKEN)
 
