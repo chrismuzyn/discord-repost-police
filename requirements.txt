@@ -4,3 +4,4 @@ psycopg2
 urllib3
 onnxruntime
 Pillow
+pgvector
