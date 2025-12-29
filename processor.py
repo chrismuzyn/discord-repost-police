@@ -10,12 +10,19 @@ from urllib.parse import urlparse
 from text_generators.insult_generator import hit_me
 from dotenv import load_dotenv
 import os
+from openai import OpenAI
 
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASS = os.getenv("DB_PASS")
 DB_HOSTNAME = os.getenv("DB_HOSTNAME")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+
+client = OpenAI(
+    base_url=OPENAI_BASE_URL,
+    api_key="not-needed"
+)
 
 db_conn = psycopg2.connect(database=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOSTNAME, port=5432)
 db_cursor = db_conn.cursor()
@@ -58,7 +65,7 @@ def neuralhash(image):
     return hash_hex
 
 
-async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False):
+async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None):
     db_cursor.execute('SELECT DISTINCT ON (md5_hash, visual_hash) message_id, channel_id FROM attachment_hashes WHERE (server_id = %s) AND (md5_hash = %s OR (visual_hash = %s AND visual_hash != \'l\')) ORDER BY md5_hash, visual_hash, message_date ASC', (server_id, md5_hash, visual_hash))
     existing_message = db_cursor.fetchone()
     
@@ -72,12 +79,12 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
                 await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
             db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
             db_conn.commit()
-            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, None, None, None))
+            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
             db_conn.commit()
             return
         
         print("Inserting image that we already have a match for.")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, None, None, None))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
         db_conn.commit()
 
         if reply:
@@ -102,26 +109,60 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
 
     else:
         print("Inserting new image.")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, None, None, None))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
         db_conn.commit()
 
-"""
-Call an openai compatible endpoint to generate around a dozen or more tags that describe the image.  
-"""
 def image_tags(attachment):
-    pass
+    image = Image.open(io.BytesIO(attachment)).convert('RGB')
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = buffered.getvalue()
 
-"""
-Call an openai compatable endpoint to generate around a dozen or more tags that describe the message.
-"""
+    response = client.chat.completions.create(
+        model="GLM-4.6V",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Generate around 12-15 tags that describe this image. Return only the tags as a comma-separated list, nothing else."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{img_str.hex()}"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=200
+    )
+
+    tags_str = response.choices[0].message.content.strip()
+    tags = [tag.strip() for tag in tags_str.split(',')]
+    return tags
+
 def message_tags(message):
-    pass
+    response = client.chat.completions.create(
+        model="GLM-4.6V",
+        messages=[
+            {
+                "role": "user",
+                "content": f"Generate around 12-15 tags that describe the content and meaning of this Discord message. Return only the tags as a comma-separated list, nothing else.\n\nMessage: {message.content}"
+            }
+        ],
+        max_tokens=200
+    )
 
-"""
-Call an openai compatible endpoint to generate a vector embedding.
-"""
-def embed():
-    pass
+    tags_str = response.choices[0].message.content.strip()
+    tags = [tag.strip() for tag in tags_str.split(',')]
+    return tags
+
+def embed(text):
+    response = client.embeddings.create(
+        model="llama-embed-nemotron",
+        input=text
+    )
+    return response.data[0].embedding
 
 async def process_message(message, reply=False):
     if message.author == message.client.user or message.author.bot:
@@ -138,7 +179,11 @@ async def process_message(message, reply=False):
                     message_id = message.id
                     message_date = message.created_at
 
-                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply)
+                    tags = message_tags(message)
+                    vector = embed(message.content)
+                    orig_text = message.content
+
+                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text)
 
     if len(message.attachments) > 0:
         for attachment in message.attachments:
@@ -154,6 +199,9 @@ async def process_message(message, reply=False):
             channel_id = message.channel.id
             message_id = message.id
             message_date = message.created_at
-            tags = image_tags(attachment_bytes)
 
-            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply)
+            tags = image_tags(attachment_bytes)
+            vector = embed(message.content)
+            orig_text = message.content
+
+            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text)
