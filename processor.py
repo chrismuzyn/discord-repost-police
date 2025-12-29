@@ -43,13 +43,7 @@ seed1 = numpy.frombuffer(seed1, dtype=numpy.float32)
 seed1 = seed1.reshape([96, 128])
 
 
-def neuralhash(attachment):
-    try:
-        image = Image.open(io.BytesIO(attachment)).convert('RGB')
-    except:
-        print("Not an image or couldn't open image.")
-        return 'n'
-
+def neuralhash(image):
     image = image.resize([360, 360])
     arr = numpy.array(image).astype(numpy.float32) / 255.0
     arr = arr * 2.0 - 1.0
@@ -111,6 +105,23 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
         db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, None, None, None))
         db_conn.commit()
 
+"""
+Call an openai compatible endpoint to generate around a dozen or more tags that describe the image.  
+"""
+def image_tags(attachment):
+    pass
+
+"""
+Call an openai compatable endpoint to generate around a dozen or more tags that describe the message.
+"""
+def message_tags(message):
+    pass
+
+"""
+Call an openai compatible endpoint to generate a vector embedding.
+"""
+def embed():
+    pass
 
 async def process_message(message, reply=False):
     if message.author == message.client.user or message.author.bot:
@@ -131,11 +142,18 @@ async def process_message(message, reply=False):
 
     if len(message.attachments) > 0:
         for attachment in message.attachments:
-            md5_hash = hashlib.md5(await attachment.read()).hexdigest()
-            visual_hash = neuralhash(await attachment.read())
+            attachment_bytes = await attachment.read()
+            try:
+                image = Image.open(io.BytesIO(attachment_bytes)).convert('RGB')
+            except:
+                continue
+
+            md5_hash = hashlib.md5(attachment_bytes).hexdigest()
+            visual_hash = neuralhash(image)
             server_id = message.guild.id
             channel_id = message.channel.id
             message_id = message.id
             message_date = message.created_at
+            tags = image_tags(attachment_bytes)
 
             await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply)
