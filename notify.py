@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-from processor import process_message
+from queue_producer import publish_message
 
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -23,7 +23,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    await process_message(message, reply=True)
+    await publish_message(message)
 
 
 disc_client.run(DISCORD_TOKEN)

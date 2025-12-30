@@ -6,3 +6,5 @@ onnxruntime
 Pillow
 pgvector
 openai
+pika
+aiohttp
