@@ -1,6 +1,7 @@
 import pika
 import json
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
@@ -58,9 +59,10 @@ def publish_message(message):
             )
         )
 
+        print(f"[{datetime.now().isoformat()}] SENT TO QUEUE - Queue: {QUEUE_NAME} | Message ID: {message_data['id']} | Author: {message_data['author_name']}#{message_data['author_discriminator']} | Status: SUCCESS")
         connection.close()
     except Exception as e:
-        print(f"Error publishing message to queue: {e}")
+        print(f"[{datetime.now().isoformat()}] ERROR SENDING TO QUEUE - Queue: {QUEUE_NAME} | Message ID: {message.id if message else 'unknown'} | Error: {e}")
         raise
 
 def publish_processed_message(message_id):
@@ -86,7 +88,8 @@ def publish_processed_message(message_id):
             )
         )
 
+        print(f"[{datetime.now().isoformat()}] SENT TO QUEUE - Queue: {PROCESSED_QUEUE_NAME} | Message ID: {processed_data['message_id']} | Status: SUCCESS")
         connection.close()
     except Exception as e:
-        print(f"Error publishing processed message ID: {e}")
+        print(f"[{datetime.now().isoformat()}] ERROR SENDING TO QUEUE - Queue: {PROCESSED_QUEUE_NAME} | Message ID: {message_id} | Error: {e}")
         raise
