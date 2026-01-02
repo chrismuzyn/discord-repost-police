@@ -21,9 +21,15 @@ DB_USER = os.getenv("DB_USER")
 DB_PASS = os.getenv("DB_PASS")
 DB_HOSTNAME = os.getenv("DB_HOSTNAME")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+OPENAI_EMBEDDING_BASE_URL = os.getenv("OPENAI_EMBEDDING_BASE_URL")
 
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
+    api_key="not-needed"
+)
+
+embedding_client = OpenAI(
+    base_url=OPENAI_EMBEDDING_BASE_URL,
     api_key="not-needed"
 )
 
@@ -202,7 +208,7 @@ def message_tags(message):
 def embed(text):
     print(f"processor.py:175 [{datetime.now().isoformat()}] - embed: Starting")
     print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for embedding")
-    response = client.embeddings.create(
+    response = embedding_client.embeddings.create(
         model="llama-embed-nemotron",
         input=text
     )
