@@ -58,7 +58,13 @@ with db_conn.cursor() as cur:
 print(f"processor.py:46 [{datetime.now().isoformat()}] - Table structure verified")
 
 print(f"processor.py:47 [{datetime.now().isoformat()}] - Loading ONNX model")
-session = onnxruntime.InferenceSession("apple-neuralhash/model.onnx")
+sess_options = onnxruntime.SessionOptions()
+sess_options.intra_op_num_threads = 2
+sess_options.inter_op_num_threads = 2
+session = onnxruntime.InferenceSession(
+    "apple-neuralhash/model.onnx",
+    sess_options=sess_options
+)
 print(f"processor.py:48 [{datetime.now().isoformat()}] - ONNX model loaded")
 
 print(f"processor.py:49 [{datetime.now().isoformat()}] - Loading seed file")
