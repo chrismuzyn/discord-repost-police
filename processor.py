@@ -6,6 +6,7 @@ import onnxruntime
 import numpy
 import io
 import base64
+import json
 from PIL import Image
 from pillow_heif import register_heif_opener
 from urllib.parse import urlparse
@@ -148,14 +149,14 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
             db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
             db_conn.commit()
             print(f"processor.py:89 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
+            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
             db_conn.commit()
             print(f"processor.py:92 [{datetime.now().isoformat()}] - check_and_ingest: Completed (missing message case)")
             return
         
         print("Inserting image that we already have a match for.")
         print(f"processor.py:95 [{datetime.now().isoformat()}] - check_and_ingest: Inserting duplicate entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
         db_conn.commit()
         print(f"processor.py:98 [{datetime.now().isoformat()}] - check_and_ingest: DB insert complete")
 
@@ -185,7 +186,7 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
     else:
         print("Inserting new image.")
         print(f"processor.py:122 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
         db_conn.commit()
         print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
 
