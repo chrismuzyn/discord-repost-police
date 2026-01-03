@@ -243,7 +243,7 @@ def image_tags(attachment, filename=None):
                     ]
                 }
             ],
-            max_tokens=200
+            max_tokens=16000
         )
         print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: OpenAI API response received")
         print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: Full API response: {response.model_dump_json()}")
@@ -291,7 +291,7 @@ def message_tags(message):
                     "content": f"Generate around 12-15 tags that describe the content and meaning of this Discord message. Return only the tags as a comma-separated list, nothing else.\n\nMessage: {message.content}"
                 }
             ],
-            max_tokens=200
+            max_tokens=16000
         )
         print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: OpenAI API response received")
         print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: Full API response: {response.model_dump_json()}")
