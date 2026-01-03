@@ -2,6 +2,7 @@ import pika
 import json
 import os
 import aiohttp
+import traceback
 from datetime import datetime
 from dotenv import load_dotenv
 from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io
@@ -122,17 +123,44 @@ async def process_queue_message(message_data):
             await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text)
 
 def on_message(ch, method, properties, body):
+    message_data = None
+    message_id = None
+    
     try:
         import asyncio
         message_data = json.loads(body)
-        print(f"Processing message {message_data.get('id')}")
+        message_id = message_data.get('id')
+        print(f"Processing message {message_id}")
         
         asyncio.run(process_queue_message(message_data))
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        print(f"Successfully processed message {message_data.get('id')}")
+        print(f"Successfully processed message {message_id}")
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        print(f"Failed message body: {body[:500]}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+    except KeyError as e:
+        print(f"Missing key error: {e}")
+        if message_data:
+            print(f"Message data: {json.dumps(message_data, indent=2)[:500]}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+    except ValueError as e:
+        print(f"Value error: {e}")
+        print(f"Message ID: {message_id}")
+        print(f"Traceback: {traceback.format_exc()}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+    except RuntimeError as e:
+        print(f"Runtime error: {e}")
+        print(f"Message ID: {message_id}")
+        print(f"Traceback: {traceback.format_exc()}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
     except Exception as e:
-        print(f"Error processing message: {e}")
+        print(f"Unexpected error: {type(e).__name__}: {e}")
+        print(f"Message ID: {message_id or 'unknown'}")
+        if message_data:
+            print(f"Message data: {json.dumps(message_data, indent=2, default=str)[:500]}")
+        print(f"Full traceback: {traceback.format_exc()}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def main():
