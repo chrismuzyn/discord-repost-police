@@ -18,6 +18,24 @@ from datetime import datetime
 
 register_heif_opener()
 
+def retry_on_failure(max_retries, exceptions):
+    import functools
+    import time
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    if attempt == max_retries:
+                        raise
+                    print(f"processor.py:retry [{datetime.now().isoformat()}] - Attempt {attempt + 1}/{max_retries + 1} failed: {e}")
+                    time.sleep(2 ** attempt)
+            return None
+        return wrapper
+    return decorator
+
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 print(f"processor.py:15 [{datetime.now().isoformat()}] - Loaded .env file")
 
@@ -28,6 +46,7 @@ DB_HOSTNAME = os.getenv("DB_HOSTNAME")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 OPENAI_EMBEDDING_BASE_URL = os.getenv("OPENAI_EMBEDDING_BASE_URL")
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", 600))
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", 0))
 
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
@@ -127,7 +146,13 @@ def neuralhash(image):
 
 async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None):
     print(f"processor.py:69 [{datetime.now().isoformat()}] - check_and_ingest: Starting - message_id={message_id}, md5={md5_hash[:8]}..., visual={visual_hash}")
-    print(f"processor.py:70 [{datetime.now().isoformat()}] - check_and_ingest: Querying DB for existing hashes")
+    
+    if tags is None or not tags:
+        print(f"processor.py:70 [{datetime.now().isoformat()}] - check_and_ingest: ERROR - tags is None or empty: {tags}")
+        raise Exception(f"Tags cannot be None or empty. tags={tags}")
+    
+    print(f"processor.py:71 [{datetime.now().isoformat()}] - check_and_ingest: Tags validated, count={len(tags)}")
+    print(f"processor.py:72 [{datetime.now().isoformat()}] - check_and_ingest: Querying DB for existing hashes")
     db_cursor.execute('SELECT DISTINCT ON (md5_hash, visual_hash) message_id, channel_id FROM attachment_hashes WHERE (server_id = %s) AND (md5_hash = %s OR (visual_hash = %s AND visual_hash != \'l\')) ORDER BY md5_hash, visual_hash, message_date ASC', (server_id, md5_hash, visual_hash))
     existing_message = db_cursor.fetchone()
     print(f"processor.py:72 [{datetime.now().isoformat()}] - check_and_ingest: DB query complete, existing_message={existing_message is not None}")
@@ -201,49 +226,103 @@ def image_tags(attachment, filename=None):
     img_str = buffered.getvalue()
 
     print(f"processor.py:134 [{datetime.now().isoformat()}] - image_tags: Calling OpenAI API for image tagging")
-    response = client.chat.completions.create(
-        model="GLM-4.6V",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Generate around 12-15 tags that describe this image. Return only the tags as a comma-separated list, nothing else."},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64.b64encode(img_str).decode()}"
+    try:
+        response = client.chat.completions.create(
+            model="GLM-4.6V",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Generate around 12-15 tags that describe this image. Return only the tags as a comma-separated list, nothing else."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64.b64encode(img_str).decode()}"
+                            }
                         }
-                    }
-                ]
-            }
-        ],
-        max_tokens=200
-    )
-    print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: OpenAI API response received")
+                    ]
+                }
+            ],
+            max_tokens=200
+        )
+        print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: OpenAI API response received")
+    except Exception as e:
+        print(f"processor.py:152 [{datetime.now().isoformat()}] - image_tags: ERROR calling OpenAI API: {e}")
+        raise Exception(f"Failed to get tags from OpenAI API: {e}")
 
-    tags_str = response.choices[0].message.content.strip()
-    tags = [tag.strip() for tag in tags_str.split(',')]
-    print(f"processor.py:154 [{datetime.now().isoformat()}] - image_tags: Completed with {len(tags)} tags")
+    response_content = response.choices[0].message.content.strip()
+    print(f"processor.py:153 [{datetime.now().isoformat()}] - image_tags: Raw API response: '{response_content}'")
+
+    if not response_content:
+        print(f"processor.py:154 [{datetime.now().isoformat()}] - image_tags: ERROR - Empty response from API")
+        raise Exception("OpenAI API returned empty response for image tags")
+
+    tags = None
+
+    try:
+        import ast
+        tags = ast.literal_eval(response_content)
+        if isinstance(tags, list):
+            print(f"processor.py:155 [{datetime.now().isoformat()}] - image_tags: Parsed as JSON array")
+            tags = [str(tag).strip() for tag in tags]
+    except (SyntaxError, ValueError):
+        print(f"processor.py:156 [{datetime.now().isoformat()}] - image_tags: Not a JSON array, parsing as comma-separated")
+        tags = [tag.strip() for tag in response_content.split(',')]
+
+    tags = [tag for tag in tags if tag and tag.strip()]
+    print(f"processor.py:157 [{datetime.now().isoformat()}] - image_tags: Parsed {len(tags)} tags: {tags}")
+
+    if not tags:
+        print(f"processor.py:158 [{datetime.now().isoformat()}] - image_tags: ERROR - No tags parsed from response")
+        raise Exception(f"No valid tags found in API response: '{response_content}'")
+
     return tags
 
 def message_tags(message):
     print(f"processor.py:157 [{datetime.now().isoformat()}] - message_tags: Starting")
     print(f"processor.py:159 [{datetime.now().isoformat()}] - message_tags: Calling OpenAI API for message tagging")
-    response = client.chat.completions.create(
-        model="GLM-4.6V",
-        messages=[
-            {
-                "role": "user",
-                "content": f"Generate around 12-15 tags that describe the content and meaning of this Discord message. Return only the tags as a comma-separated list, nothing else.\n\nMessage: {message.content}"
-            }
-        ],
-        max_tokens=200
-    )
-    print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: OpenAI API response received")
+    try:
+        response = client.chat.completions.create(
+            model="GLM-4.6V",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Generate around 12-15 tags that describe the content and meaning of this Discord message. Return only the tags as a comma-separated list, nothing else.\n\nMessage: {message.content}"
+                }
+            ],
+            max_tokens=200
+        )
+        print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: OpenAI API response received")
+    except Exception as e:
+        print(f"processor.py:171 [{datetime.now().isoformat()}] - message_tags: ERROR calling OpenAI API: {e}")
+        raise Exception(f"Failed to get tags from OpenAI API: {e}")
 
-    tags_str = response.choices[0].message.content.strip()
-    tags = [tag.strip() for tag in tags_str.split(',')]
-    print(f"processor.py:173 [{datetime.now().isoformat()}] - message_tags: Completed with {len(tags)} tags")
+    response_content = response.choices[0].message.content.strip()
+    print(f"processor.py:172 [{datetime.now().isoformat()}] - message_tags: Raw API response: '{response_content}'")
+
+    if not response_content:
+        print(f"processor.py:173 [{datetime.now().isoformat()}] - message_tags: ERROR - Empty response from API")
+        raise Exception("OpenAI API returned empty response for message tags")
+
+    tags = None
+
+    try:
+        import ast
+        tags = ast.literal_eval(response_content)
+        if isinstance(tags, list):
+            print(f"processor.py:174 [{datetime.now().isoformat()}] - message_tags: Parsed as JSON array")
+            tags = [str(tag).strip() for tag in tags]
+    except (SyntaxError, ValueError):
+        print(f"processor.py:175 [{datetime.now().isoformat()}] - message_tags: Not a JSON array, parsing as comma-separated")
+        tags = [tag.strip() for tag in response_content.split(',')]
+
+    tags = [tag for tag in tags if tag and tag.strip()]
+    print(f"processor.py:176 [{datetime.now().isoformat()}] - message_tags: Parsed {len(tags)} tags: {tags}")
+
+    if not tags:
+        print(f"processor.py:177 [{datetime.now().isoformat()}] - message_tags: ERROR - No tags parsed from response")
+        raise Exception(f"No valid tags found in API response: '{response_content}'")
+
     return tags
 
 def embed(text):
