@@ -246,6 +246,7 @@ def image_tags(attachment, filename=None):
             max_tokens=200
         )
         print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: OpenAI API response received")
+        print(f"processor.py:151 [{datetime.now().isoformat()}] - image_tags: Full API response: {response.model_dump_json()}")
     except Exception as e:
         print(f"processor.py:152 [{datetime.now().isoformat()}] - image_tags: ERROR calling OpenAI API: {e}")
         raise Exception(f"Failed to get tags from OpenAI API: {e}")
@@ -293,6 +294,7 @@ def message_tags(message):
             max_tokens=200
         )
         print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: OpenAI API response received")
+        print(f"processor.py:170 [{datetime.now().isoformat()}] - message_tags: Full API response: {response.model_dump_json()}")
     except Exception as e:
         print(f"processor.py:171 [{datetime.now().isoformat()}] - message_tags: ERROR calling OpenAI API: {e}")
         raise Exception(f"Failed to get tags from OpenAI API: {e}")
