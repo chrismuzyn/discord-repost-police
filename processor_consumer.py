@@ -5,7 +5,10 @@ import aiohttp
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
-from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io
+from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png
+from pillow_heif import register_heif_opener
+
+register_heif_opener()
 
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 
@@ -105,7 +108,9 @@ async def process_queue_message(message_data):
         for attachment in message.attachments:
             attachment_bytes = await attachment.read()
             try:
-                image = Image.open(io.BytesIO(attachment_bytes)).convert('RGB')
+                converted_png = convert_to_png(attachment_bytes, attachment.filename)
+                bytes_for_image = converted_png if converted_png else attachment_bytes
+                image = Image.open(io.BytesIO(bytes_for_image)).convert('RGB')
             except:
                 continue
 
@@ -116,7 +121,7 @@ async def process_queue_message(message_data):
             message_id = message.id
             message_date = message.created_at
 
-            tags = image_tags(attachment_bytes)
+            tags = image_tags(attachment_bytes, attachment.filename)
             vector = embed(message.content)
             orig_text = message.content
 

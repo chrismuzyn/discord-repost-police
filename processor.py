@@ -6,12 +6,15 @@ import onnxruntime
 import numpy
 import io
 from PIL import Image
+from pillow_heif import register_heif_opener
 from urllib.parse import urlparse
 from text_generators.insult_generator import hit_me
 from dotenv import load_dotenv
 import os
 from openai import OpenAI
 from datetime import datetime
+
+register_heif_opener()
 
 load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 print(f"processor.py:15 [{datetime.now().isoformat()}] - Loaded .env file")
@@ -73,6 +76,30 @@ seed1 = numpy.frombuffer(seed1, dtype=numpy.float32)
 seed1 = seed1.reshape([96, 128])
 print(f"processor.py:52 [{datetime.now().isoformat()}] - Seed file loaded and reshaped")
 
+"""
+Convert unsupported images, return None if conversion not needed.
+"""
+def convert_to_png(attachment_bytes, filename=None):
+    print(f"processor.py:77 [{datetime.now().isoformat()}] - convert_to_png: Starting - filename={filename}")
+    try:
+        image = Image.open(io.BytesIO(attachment_bytes))
+        image_format = image.format or 'UNKNOWN'
+        print(f"processor.py:80 [{datetime.now().isoformat()}] - convert_to_png: Detected format={image_format}")
+        
+        if image_format in ['WEBP', 'HEIF', 'HEIC']:
+            print(f"processor.py:82 [{datetime.now().isoformat()}] - convert_to_png: Converting {image_format} to PNG")
+            image = image.convert('RGB')
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            png_bytes = buffered.getvalue()
+            print(f"processor.py:86 [{datetime.now().isoformat()}] - convert_to_png: Conversion complete")
+            return png_bytes
+        else:
+            print(f"processor.py:88 [{datetime.now().isoformat()}] - convert_to_png: No conversion needed for {image_format}")
+            return None
+    except Exception as e:
+        print(f"processor.py:90 [{datetime.now().isoformat()}] - convert_to_png: Error - {e}")
+        return None
 
 def neuralhash(image):
     print(f"processor.py:54 [{datetime.now().isoformat()}] - neuralhash: Starting")
@@ -158,9 +185,12 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
         db_conn.commit()
         print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
 
-def image_tags(attachment):
+def image_tags(attachment, filename=None):
     print(f"processor.py:127 [{datetime.now().isoformat()}] - image_tags: Starting")
-    image = Image.open(io.BytesIO(attachment)).convert('RGB')
+    converted_png = convert_to_png(attachment, filename)
+    bytes_to_process = converted_png if converted_png else attachment
+    
+    image = Image.open(io.BytesIO(bytes_to_process)).convert('RGB')
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     img_str = buffered.getvalue()
@@ -258,12 +288,15 @@ async def process_message(message, reply=False):
             print(f"processor.py:220 [{datetime.now().isoformat()}] - process_message: Reading attachment {attachment.filename}")
             attachment_bytes = await attachment.read()
             try:
-                image = Image.open(io.BytesIO(attachment_bytes)).convert('RGB')
+                converted_png = convert_to_png(attachment_bytes, attachment.filename)
+                bytes_for_image = converted_png if converted_png else attachment_bytes
+                image = Image.open(io.BytesIO(bytes_for_image)).convert('RGB')
                 print(f"processor.py:225 [{datetime.now().isoformat()}] - process_message: Image opened successfully")
             except Exception as e:
                 print(f"processor.py:227 [{datetime.now().isoformat()}] - process_message: Failed to open image: {e}")
                 continue
 
+            #hash is always taken of the original attachment, not the converted image, if a conversion was performed
             md5_hash = hashlib.md5(attachment_bytes).hexdigest()
             print(f"processor.py:231 [{datetime.now().isoformat()}] - process_message: Calling neuralhash for attachment")
             visual_hash = neuralhash(image)
@@ -273,7 +306,7 @@ async def process_message(message, reply=False):
             message_date = message.created_at
 
             print(f"processor.py:238 [{datetime.now().isoformat()}] - process_message: Calling image_tags for attachment")
-            tags = image_tags(attachment_bytes)
+            tags = image_tags(attachment_bytes, attachment.filename)
             print(f"processor.py:240 [{datetime.now().isoformat()}] - process_message: Calling embed for attachment")
             vector = embed(message.content)
             orig_text = message.content

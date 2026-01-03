@@ -4,6 +4,7 @@ psycopg2
 urllib3
 onnxruntime
 Pillow
+pillow-heif
 pgvector
 openai
 pika
