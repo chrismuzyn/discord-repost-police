@@ -5,6 +5,7 @@ import random
 import onnxruntime
 import numpy
 import io
+import base64
 from PIL import Image
 from pillow_heif import register_heif_opener
 from urllib.parse import urlparse
@@ -206,7 +207,7 @@ def image_tags(attachment, filename=None):
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{img_str.hex()}"
+                            "url": f"data:image/png;base64,{base64.b64encode(img_str).decode()}"
                         }
                     }
                 ]
