@@ -26,15 +26,18 @@ DB_PASS = os.getenv("DB_PASS")
 DB_HOSTNAME = os.getenv("DB_HOSTNAME")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 OPENAI_EMBEDDING_BASE_URL = os.getenv("OPENAI_EMBEDDING_BASE_URL")
+OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", 600))
 
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
-    api_key="not-needed"
+    api_key="not-needed",
+    timeout=OPENAI_TIMEOUT
 )
 
 embedding_client = OpenAI(
     base_url=OPENAI_EMBEDDING_BASE_URL,
-    api_key="not-needed"
+    api_key="not-needed",
+    timeout=OPENAI_TIMEOUT
 )
 
 print(f"processor.py:27 [{datetime.now().isoformat()}] - Connecting to DB at {DB_HOSTNAME}")
