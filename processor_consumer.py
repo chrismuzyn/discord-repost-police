@@ -5,7 +5,7 @@ import aiohttp
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
-from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png
+from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png, initialize_database
 from pillow_heif import register_heif_opener
 
 register_heif_opener()
@@ -180,6 +180,8 @@ def on_message(ch, method, properties, body):
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def main():
+    initialize_database()
+    
     parameters = pika.URLParameters(RABBITMQ_URL)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
