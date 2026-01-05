@@ -47,6 +47,9 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 OPENAI_EMBEDDING_BASE_URL = os.getenv("OPENAI_EMBEDDING_BASE_URL")
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", 600))
 OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", 0))
+CONVERSATION_TIMEOUT = int(os.getenv("CONVERSATION_TIMEOUT", 1800))
+SEMANTIC_DISTANCE_THRESHOLD = float(os.getenv("SEMANTIC_DISTANCE_THRESHOLD", 0.7))
+SOURCE_IDENTIFIER = os.getenv("SOURCE_IDENTIFIER", "discord")
 
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
@@ -144,7 +147,7 @@ def neuralhash(image):
     return hash_hex
 
 
-async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None):
+async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None, message_data=None):
     print(f"processor.py:69 [{datetime.now().isoformat()}] - check_and_ingest: Starting - message_id={message_id}, md5={md5_hash[:8]}..., visual={visual_hash}")
     
     if tags is None or not tags:
@@ -152,10 +155,17 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
         raise Exception(f"Tags cannot be None or empty. tags={tags}")
     
     print(f"processor.py:71 [{datetime.now().isoformat()}] - check_and_ingest: Tags validated, count={len(tags)}")
-    print(f"processor.py:72 [{datetime.now().isoformat()}] - check_and_ingest: Querying DB for existing hashes")
+    
+    if message_data is None:
+        message_data = {}
+    
+    conversation_id = detect_conversation(message_data, vector, channel_id, message_date)
+    print(f"processor.py:74 [{datetime.now().isoformat()}] - check_and_ingest: conversation_id={conversation_id}")
+    
+    print(f"processor.py:75 [{datetime.now().isoformat()}] - check_and_ingest: Querying DB for existing hashes")
     db_cursor.execute('SELECT DISTINCT ON (md5_hash, visual_hash) message_id, channel_id FROM attachment_hashes WHERE (server_id = %s) AND (md5_hash = %s OR (visual_hash = %s AND visual_hash != \'l\')) ORDER BY md5_hash, visual_hash, message_date ASC', (server_id, md5_hash, visual_hash))
     existing_message = db_cursor.fetchone()
-    print(f"processor.py:72 [{datetime.now().isoformat()}] - check_and_ingest: DB query complete, existing_message={existing_message is not None}")
+    print(f"processor.py:77 [{datetime.now().isoformat()}] - check_and_ingest: DB query complete, existing_message={existing_message is not None}")
     
     if existing_message != None:
         print(f"processor.py:74 [{datetime.now().isoformat()}] - check_and_ingest: Found existing match in channel {existing_message[1]}")
@@ -170,20 +180,22 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
             if reply:
                 print(f"processor.py:83 [{datetime.now().isoformat()}] - check_and_ingest: Sending Discord reply about missing message")
                 await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
-            print(f"processor.py:86 [{datetime.now().isoformat()}] - check_and_ingest: Deleting old entry from DB")
+            print(f"processor.py:89 [{datetime.now().isoformat()}] - check_and_ingest: Deleting old entry from DB")
             db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
             db_conn.commit()
-            print(f"processor.py:89 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
+            print(f"processor.py:92 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
+            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
             db_conn.commit()
-            print(f"processor.py:92 [{datetime.now().isoformat()}] - check_and_ingest: Completed (missing message case)")
+            update_conversation(conversation_id, vector)
+            print(f"processor.py:95 [{datetime.now().isoformat()}] - check_and_ingest: Completed (missing message case)")
             return
         
         print("Inserting image that we already have a match for.")
-        print(f"processor.py:95 [{datetime.now().isoformat()}] - check_and_ingest: Inserting duplicate entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
+        print(f"processor.py:98 [{datetime.now().isoformat()}] - check_and_ingest: Inserting duplicate entry to DB")
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
         db_conn.commit()
-        print(f"processor.py:98 [{datetime.now().isoformat()}] - check_and_ingest: DB insert complete")
+        update_conversation(conversation_id, vector)
+        print(f"processor.py:101 [{datetime.now().isoformat()}] - check_and_ingest: DB insert complete")
 
         if reply:
             print(f"processor.py:100 [{datetime.now().isoformat()}] - check_and_ingest: Preparing Discord reply")
@@ -210,10 +222,11 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
 
     else:
         print("Inserting new image.")
-        print(f"processor.py:122 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text))
+        print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
         db_conn.commit()
-        print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
+        update_conversation(conversation_id, vector)
+        print(f"processor.py:128 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
 
 def image_tags(attachment, filename=None):
     print(f"processor.py:127 [{datetime.now().isoformat()}] - image_tags: Starting")
@@ -338,6 +351,176 @@ def embed(text):
     print(f"processor.py:183 [{datetime.now().isoformat()}] - embed: Completed")
     return response.data[0].embedding
 
+def calculate_cosine_similarity(embedding1, embedding2):
+    print(f"processor.py:342 [{datetime.now().isoformat()}] - calculate_cosine_similarity: Starting")
+    import numpy as np
+    vec1 = np.array(embedding1)
+    vec2 = np.array(embedding2)
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    similarity = dot_product / (norm1 * norm2)
+    print(f"processor.py:348 [{datetime.now().isoformat()}] - calculate_cosine_similarity: Completed - similarity={similarity:.4f}")
+    return similarity
+
+def get_latest_message_in_channel(channel_id):
+    print(f"processor.py:350 [{datetime.now().isoformat()}] - get_latest_message_in_channel: Starting - channel_id={channel_id}")
+    db_cursor.execute('''
+        SELECT id, message_id, channel_id, message_date, conversation_id, vector
+        FROM attachment_hashes
+        WHERE channel_id = %s
+        ORDER BY message_date DESC
+        LIMIT 1
+    ''', (channel_id,))
+    result = db_cursor.fetchone()
+    print(f"processor.py:358 [{datetime.now().isoformat()}] - get_latest_message_in_channel: Completed - found={result is not None}")
+    return result
+
+def get_conversation_representative_embedding(conversation_id):
+    print(f"processor.py:360 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Starting - conversation_id={conversation_id}")
+    db_cursor.execute('''
+        SELECT representative_embedding
+        FROM conversations
+        WHERE id = %s
+    ''', (conversation_id,))
+    result = db_cursor.fetchone()
+    if result and result[0]:
+        print(f"processor.py:367 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Completed - found embedding")
+        return result[0]
+    print(f"processor.py:368 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Completed - no embedding found")
+    return None
+
+def create_conversation(channel_id, initial_embedding):
+    print(f"processor.py:370 [{datetime.now().isoformat()}] - create_conversation: Starting - channel_id={channel_id}")
+    db_cursor.execute('''
+        INSERT INTO conversations (source, channel_id, started_at, last_message_at, message_count, representative_embedding)
+        VALUES (%s, %s, now(), now(), 1, %s)
+        RETURNING id
+    ''', (SOURCE_IDENTIFIER, channel_id, initial_embedding))
+    conversation_id = db_cursor.fetchone()[0]
+    db_conn.commit()
+    print(f"processor.py:378 [{datetime.now().isoformat()}] - create_conversation: Completed - conversation_id={conversation_id}")
+    return conversation_id
+
+def update_conversation(conversation_id, new_embedding):
+    print(f"processor.py:380 [{datetime.now().isoformat()}] - update_conversation: Starting - conversation_id={conversation_id}")
+    db_cursor.execute('''
+        SELECT message_count, representative_embedding
+        FROM conversations
+        WHERE id = %s
+    ''', (conversation_id,))
+    result = db_cursor.fetchone()
+    if not result:
+        print(f"processor.py:387 [{datetime.now().isoformat()}] - update_conversation: ERROR - conversation not found")
+        return
+    
+    current_count = result[0]
+    current_avg_embedding = result[1]
+    
+    import numpy as np
+    current_avg_embedding = np.array(current_avg_embedding)
+    new_embedding = np.array(new_embedding)
+    new_avg_embedding = ((current_avg_embedding * current_count) + new_embedding) / (current_count + 1)
+    
+    db_cursor.execute('''
+        UPDATE conversations
+        SET last_message_at = now(),
+            message_count = message_count + 1,
+            representative_embedding = %s
+        WHERE id = %s
+    ''', (new_avg_embedding.tolist(), conversation_id))
+    db_conn.commit()
+    print(f"processor.py:402 [{datetime.now().isoformat()}] - update_conversation: Completed - conversation_id={conversation_id}, new_count={current_count + 1}")
+
+def get_conversation_id_by_message_id(message_id):
+    print(f"processor.py:404 [{datetime.now().isoformat()}] - get_conversation_id_by_message_id: Starting - message_id={message_id}")
+    db_cursor.execute('''
+        SELECT conversation_id
+        FROM attachment_hashes
+        WHERE message_id = %s
+        LIMIT 1
+    ''', (message_id,))
+    result = db_cursor.fetchone()
+    if result and result[0]:
+        print(f"processor.py:411 [{datetime.now().isoformat()}] - get_conversation_id_by_message_id: Completed - conversation_id={result[0]}")
+        return result[0]
+    print(f"processor.py:412 [{datetime.now().isoformat()}] - get_conversation_id_by_message_id: Completed - no conversation_id found")
+    return None
+
+def detect_conversation(message_data, embedding, channel_id, message_date):
+    print(f"processor.py:414 [{datetime.now().isoformat()}] - detect_conversation: Starting - channel_id={channel_id}")
+    
+    reference_message_id = message_data.get('reference_message_id')
+    thread_id = message_data.get('thread_id')
+    
+    print(f"processor.py:418 [{datetime.now().isoformat()}] - detect_conversation: Layer 1 - Checking explicit signals")
+    print(f"processor.py:419 [{datetime.now().isoformat()}] - detect_conversation: reference_message_id={reference_message_id}, thread_id={thread_id}")
+    
+    if reference_message_id:
+        print(f"processor.py:421 [{datetime.now().isoformat()}] - detect_conversation: Message is a reply")
+        parent_conversation_id = get_conversation_id_by_message_id(reference_message_id)
+        if parent_conversation_id:
+            print(f"processor.py:423 [{datetime.now().isoformat()}] - detect_conversation: Found parent conversation_id={parent_conversation_id}")
+            return parent_conversation_id
+        else:
+            print(f"processor.py:425 [{datetime.now().isoformat()}] - detect_conversation: Parent message not found in DB, creating new conversation")
+            return create_conversation(channel_id, embedding)
+    
+    if thread_id:
+        print(f"processor.py:429 [{datetime.now().isoformat()}] - detect_conversation: Message is in a thread")
+        latest_in_thread = db_cursor.fetchone()
+        db_cursor.execute('''
+            SELECT conversation_id
+            FROM attachment_hashes
+            WHERE message_id = %s OR message_id = %s
+            LIMIT 1
+        ''', (thread_id, message_data.get('thread_parent_id')))
+        thread_result = db_cursor.fetchone()
+        if thread_result and thread_result[0]:
+            print(f"processor.py:438 [{datetime.now().isoformat()}] - detect_conversation: Found thread conversation_id={thread_result[0]}")
+            return thread_result[0]
+        else:
+            print(f"processor.py:440 [{datetime.now().isoformat()}] - detect_conversation: Thread not found in DB, creating new conversation")
+            return create_conversation(channel_id, embedding)
+    
+    print(f"processor.py:444 [{datetime.now().isoformat()}] - detect_conversation: Layer 2 - Checking heuristic signals")
+    latest_message = get_latest_message_in_channel(channel_id)
+    
+    if not latest_message:
+        print(f"processor.py:447 [{datetime.now().isoformat()}] - detect_conversation: No previous message found, creating new conversation")
+        return create_conversation(channel_id, embedding)
+    
+    latest_message_date = latest_message[3]
+    time_diff = (message_date - latest_message_date).total_seconds()
+    print(f"processor.py:451 [{datetime.now().isoformat()}] - detect_conversation: time_diff={time_diff}s, timeout={CONVERSATION_TIMEOUT}s")
+    
+    if time_diff > CONVERSATION_TIMEOUT:
+        print(f"processor.py:453 [{datetime.now().isoformat()}] - detect_conversation: Time diff exceeds timeout, creating new conversation")
+        return create_conversation(channel_id, embedding)
+    
+    print(f"processor.py:456 [{datetime.now().isoformat()}] - detect_conversation: Layer 3 - Checking semantic coherence")
+    candidate_conversation_id = latest_message[4]
+    
+    if not candidate_conversation_id:
+        print(f"processor.py:459 [{datetime.now().isoformat()}] - detect_conversation: Latest message has no conversation_id, creating new conversation")
+        return create_conversation(channel_id, embedding)
+    
+    conversation_embedding = get_conversation_representative_embedding(candidate_conversation_id)
+    
+    if not conversation_embedding:
+        print(f"processor.py:464 [{datetime.now().isoformat()}] - detect_conversation: No conversation embedding found, creating new conversation")
+        return create_conversation(channel_id, embedding)
+    
+    similarity = calculate_cosine_similarity(embedding, conversation_embedding)
+    print(f"processor.py:467 [{datetime.now().isoformat()}] - detect_conversation: similarity={similarity:.4f}, threshold={SEMANTIC_DISTANCE_THRESHOLD}")
+    
+    if similarity >= SEMANTIC_DISTANCE_THRESHOLD:
+        print(f"processor.py:469 [{datetime.now().isoformat()}] - detect_conversation: Message is on-topic, using existing conversation_id={candidate_conversation_id}")
+        return candidate_conversation_id
+    else:
+        print(f"processor.py:471 [{datetime.now().isoformat()}] - detect_conversation: Message is off-topic, creating new conversation")
+        return create_conversation(channel_id, embedding)
+
 async def process_message(message, reply=False):
     print(f"processor.py:186 [{datetime.now().isoformat()}] - process_message: Starting - message_id={message.id}, reply={reply}")
     if message.author == message.client.user or message.author.bot:
@@ -357,15 +540,21 @@ async def process_message(message, reply=False):
                     message_id = message.id
                     message_date = message.created_at
 
-                    print(f"processor.py:205 [{datetime.now().isoformat()}] - process_message: Calling message_tags for URL")
+                    print(f"processor.py:208 [{datetime.now().isoformat()}] - process_message: Calling message_tags for URL")
                     tags = message_tags(message)
-                    print(f"processor.py:207 [{datetime.now().isoformat()}] - process_message: Calling embed for URL")
+                    print(f"processor.py:210 [{datetime.now().isoformat()}] - process_message: Calling embed for URL")
                     vector = embed(message.content)
                     orig_text = message.content
 
-                    print(f"processor.py:211 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for URL")
-                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text)
-                    print(f"processor.py:213 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for URL")
+                    message_data = {
+                        'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+                        'thread_id': str(message.thread.id) if message.thread else None,
+                        'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
+                    }
+
+                    print(f"processor.py:218 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for URL")
+                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text, message_data)
+                    print(f"processor.py:220 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for URL")
 
     print(f"processor.py:216 [{datetime.now().isoformat()}] - process_message: Checking for attachments")
     if len(message.attachments) > 0:
@@ -391,14 +580,20 @@ async def process_message(message, reply=False):
             message_id = message.id
             message_date = message.created_at
 
-            print(f"processor.py:238 [{datetime.now().isoformat()}] - process_message: Calling image_tags for attachment")
+            print(f"processor.py:241 [{datetime.now().isoformat()}] - process_message: Calling image_tags for attachment")
             tags = image_tags(attachment_bytes, attachment.filename)
-            print(f"processor.py:240 [{datetime.now().isoformat()}] - process_message: Calling embed for attachment")
+            print(f"processor.py:243 [{datetime.now().isoformat()}] - process_message: Calling embed for attachment")
             vector = embed(message.content)
             orig_text = message.content
 
-            print(f"processor.py:244 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for attachment")
-            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text)
-            print(f"processor.py:246 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for attachment")
+            message_data = {
+                'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+                'thread_id': str(message.thread.id) if message.thread else None,
+                'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
+            }
+
+            print(f"processor.py:251 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for attachment")
+            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
+            print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for attachment")
     
     print(f"processor.py:249 [{datetime.now().isoformat()}] - process_message: Completed")

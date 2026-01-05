@@ -37,7 +37,10 @@ def publish_message(message):
             'guild_id': str(message.guild.id) if message.guild else None,
             'channel_id': str(message.channel.id),
             'created_at': message.created_at.isoformat(),
-            'attachments': []
+            'attachments': [],
+            'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+            'thread_id': str(message.thread.id) if message.thread else None,
+            'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
         }
 
         for attachment in message.attachments:

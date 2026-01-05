@@ -27,6 +27,8 @@ class MockMessage:
         self.created_at = datetime.fromisoformat(message_data['created_at'])
         self.attachments = [MockAttachment(att) for att in message_data.get('attachments', [])]
         self.client = MockClient(DISCORD_TOKEN)
+        self.reference = MockReference(message_data.get('reference_message_id'))
+        self.thread = MockThread(message_data.get('thread_id'), message_data.get('thread_parent_id'))
 
 class MockGuild:
     def __init__(self, guild_id):
@@ -54,6 +56,15 @@ class MockAuthor:
         self.name = message_data['author_name']
         self.discriminator = message_data['author_discriminator']
         self.bot = message_data['bot']
+
+class MockReference:
+    def __init__(self, message_id):
+        self.message_id = int(message_id) if message_id else None
+
+class MockThread:
+    def __init__(self, thread_id, parent_id):
+        self.id = int(thread_id) if thread_id else None
+        self.parent_id = int(parent_id) if parent_id else None
 
 class MockClient:
     def __init__(self, token):
@@ -102,7 +113,7 @@ async def process_queue_message(message_data):
                     vector = embed(message.content)
                     orig_text = message.content
 
-                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text)
+                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text, message_data)
 
     if len(message.attachments) > 0:
         for attachment in message.attachments:
@@ -125,7 +136,7 @@ async def process_queue_message(message_data):
             vector = embed(message.content)
             orig_text = message.content
 
-            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text)
+            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
 
 def on_message(ch, method, properties, body):
     message_data = None
