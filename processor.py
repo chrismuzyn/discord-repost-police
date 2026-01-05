@@ -63,6 +63,11 @@ embedding_client = OpenAI(
     timeout=OPENAI_TIMEOUT
 )
 
+print(f"processor.py:27 [{datetime.now().isoformat()}] - Connecting to DB at {DB_HOSTNAME}")
+db_conn = psycopg2.connect(database=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOSTNAME, port=5432)
+db_cursor = db_conn.cursor()
+print(f"processor.py:30 [{datetime.now().isoformat()}] - Connected to DB successfully")
+
 def initialize_database():
     print(f"processor.py:27 [{datetime.now().isoformat()}] - Initializing database")
     try:
@@ -116,50 +121,45 @@ def initialize_database():
         import sys
         sys.exit(1)
 
-print(f"processor.py:27 [{datetime.now().isoformat()}] - Connecting to DB at {DB_HOSTNAME}")
-db_conn = psycopg2.connect(database=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOSTNAME, port=5432)
-db_cursor = db_conn.cursor()
-print(f"processor.py:30 [{datetime.now().isoformat()}] - Connected to DB successfully")
-
-print(f"processor.py:31 [{datetime.now().isoformat()}] - Creating/verifying table structure")
-with db_conn.cursor() as cur:
-    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS attachment_hashes (
-            id SERIAL PRIMARY KEY,
-            server_id BIGINT NOT NULL,
-            channel_id VARCHAR(20) NOT NULL,
-            message_id VARCHAR(20) NOT NULL,
-            md5_hash VARCHAR(32) NOT NULL,
-            visual_hash VARCHAR(32) NOT NULL,
-            message_date TIMESTAMP NOT NULL,
-            tags JSONB,
-            vector vector(4096),
-            orig_text TEXT
-        );
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id BIGSERIAL PRIMARY KEY,
-            source VARCHAR(50) NOT NULL DEFAULT 'discord',
-            channel_id VARCHAR(255) NOT NULL,
-            started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            message_count INT NOT NULL DEFAULT 1,
-            representative_embedding vector(4096)
-        );
-    """)
-    cur.execute("""
-        ALTER TABLE attachment_hashes
-        ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id);
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_attachment_hashes_conversation_id ON attachment_hashes (conversation_id);
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_conversations_channel_id_last_message_at ON conversations (channel_id, last_message_at);
-    """)
-print(f"processor.py:46 [{datetime.now().isoformat()}] - Table structure verified")
+#print(f"processor.py:31 [{datetime.now().isoformat()}] - Creating/verifying table structure")
+#with db_conn.cursor() as cur:
+#    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+#    cur.execute("""
+#        CREATE TABLE IF NOT EXISTS attachment_hashes (
+#            id SERIAL PRIMARY KEY,
+#            server_id BIGINT NOT NULL,
+#            channel_id VARCHAR(20) NOT NULL,
+#            message_id VARCHAR(20) NOT NULL,
+#            md5_hash VARCHAR(32) NOT NULL,
+#            visual_hash VARCHAR(32) NOT NULL,
+#            message_date TIMESTAMP NOT NULL,
+#            tags JSONB,
+#            vector vector(4096),
+#            orig_text TEXT
+#        );
+#    """)
+#    cur.execute("""
+#        CREATE TABLE IF NOT EXISTS conversations (
+#            id BIGSERIAL PRIMARY KEY,
+#            source VARCHAR(50) NOT NULL DEFAULT 'discord',
+#            channel_id VARCHAR(255) NOT NULL,
+#            started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+#            last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+#            message_count INT NOT NULL DEFAULT 1,
+#            representative_embedding vector(4096)
+#        );
+#    """)
+#    cur.execute("""
+#        ALTER TABLE attachment_hashes
+#        ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id);
+#    """)
+#    cur.execute("""
+#        CREATE INDEX IF NOT EXISTS idx_attachment_hashes_conversation_id ON attachment_hashes (conversation_id);
+#    """)
+#    cur.execute("""
+#        CREATE INDEX IF NOT EXISTS idx_conversations_channel_id_last_message_at ON conversations (channel_id, last_message_at);
+#    """)
+#print(f"processor.py:46 [{datetime.now().isoformat()}] - Table structure verified")
 
 print(f"processor.py:47 [{datetime.now().isoformat()}] - Loading ONNX model")
 sess_options = onnxruntime.SessionOptions()
