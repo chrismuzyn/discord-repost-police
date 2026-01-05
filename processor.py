@@ -214,7 +214,7 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
             db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
             db_conn.commit()
             print(f"processor.py:92 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
             db_conn.commit()
             update_conversation(conversation_id, vector)
             print(f"processor.py:95 [{datetime.now().isoformat()}] - check_and_ingest: Completed (missing message case)")
@@ -222,7 +222,7 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
         
         print("Inserting image that we already have a match for.")
         print(f"processor.py:98 [{datetime.now().isoformat()}] - check_and_ingest: Inserting duplicate entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
         db_conn.commit()
         update_conversation(conversation_id, vector)
         print(f"processor.py:101 [{datetime.now().isoformat()}] - check_and_ingest: DB insert complete")
@@ -253,7 +253,7 @@ async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message
     else:
         print("Inserting new image.")
         print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
         db_conn.commit()
         update_conversation(conversation_id, vector)
         print(f"processor.py:128 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
@@ -401,7 +401,7 @@ def get_latest_message_in_channel(channel_id):
         WHERE channel_id = %s
         ORDER BY message_date DESC
         LIMIT 1
-    ''', (channel_id,))
+    ''', (str(channel_id),))
     result = db_cursor.fetchone()
     print(f"processor.py:358 [{datetime.now().isoformat()}] - get_latest_message_in_channel: Completed - found={result is not None}")
     return result
@@ -426,7 +426,7 @@ def create_conversation(channel_id, initial_embedding):
         INSERT INTO conversations (source, channel_id, started_at, last_message_at, message_count, representative_embedding)
         VALUES (%s, %s, now(), now(), 1, %s)
         RETURNING id
-    ''', (SOURCE_IDENTIFIER, channel_id, initial_embedding))
+    ''', (SOURCE_IDENTIFIER, str(channel_id), initial_embedding))
     conversation_id = db_cursor.fetchone()[0]
     db_conn.commit()
     print(f"processor.py:378 [{datetime.now().isoformat()}] - create_conversation: Completed - conversation_id={conversation_id}")
