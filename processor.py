@@ -85,6 +85,27 @@ with db_conn.cursor() as cur:
             orig_text TEXT
         );
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id BIGSERIAL PRIMARY KEY,
+            source VARCHAR(50) NOT NULL DEFAULT 'discord',
+            channel_id VARCHAR(255) NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            message_count INT NOT NULL DEFAULT 1,
+            representative_embedding vector(4096)
+        );
+    """)
+    cur.execute("""
+        ALTER TABLE attachment_hashes
+        ADD COLUMN IF NOT EXISTS conversation_id BIGINT REFERENCES conversations(id);
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_attachment_hashes_conversation_id ON attachment_hashes (conversation_id);
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_conversations_channel_id_last_message_at ON conversations (channel_id, last_message_at);
+    """)
 print(f"processor.py:46 [{datetime.now().isoformat()}] - Table structure verified")
 
 print(f"processor.py:47 [{datetime.now().isoformat()}] - Loading ONNX model")
