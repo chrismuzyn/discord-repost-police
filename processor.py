@@ -521,6 +521,7 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
         return create_conversation(channel_id, embedding)
     
     latest_message_date = latest_message[3]
+    message_date = message_date.replace(tzinfo=None)
     time_diff = (message_date - latest_message_date).total_seconds()
     print(f"processor.py:451 [{datetime.now().isoformat()}] - detect_conversation: time_diff={time_diff}s, timeout={CONVERSATION_TIMEOUT}s")
     
