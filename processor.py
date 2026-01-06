@@ -18,6 +18,23 @@ from datetime import datetime
 
 register_heif_opener()
 
+def parse_vector_string(vector_str):
+    import numpy as np
+    if vector_str is None:
+        return None
+    if isinstance(vector_str, list):
+        return np.array(vector_str, dtype=np.float32)
+    if isinstance(vector_str, np.ndarray):
+        return vector_str
+    try:
+        parsed = json.loads(vector_str.replace('[', '').replace(']', '').replace(' ', ','))
+        return np.array(parsed, dtype=np.float32)
+    except (json.JSONDecodeError, AttributeError):
+        try:
+            return np.array([float(x) for x in str(vector_str).strip('[]').split(',')], dtype=np.float32)
+        except ValueError:
+            return None
+
 def retry_on_failure(max_retries, exceptions):
     import functools
     import time
@@ -384,11 +401,17 @@ def embed(text):
 def calculate_cosine_similarity(embedding1, embedding2):
     print(f"processor.py:342 [{datetime.now().isoformat()}] - calculate_cosine_similarity: Starting")
     import numpy as np
-    vec1 = np.array(embedding1)
-    vec2 = np.array(embedding2)
+    vec1 = parse_vector_string(embedding1)
+    vec2 = parse_vector_string(embedding2)
+    if vec1 is None or vec2 is None:
+        print(f"processor.py:345 [{datetime.now().isoformat()}] - calculate_cosine_similarity: ERROR - Failed to parse vectors")
+        return 0.0
     dot_product = np.dot(vec1, vec2)
     norm1 = np.linalg.norm(vec1)
     norm2 = np.linalg.norm(vec2)
+    if norm1 == 0 or norm2 == 0:
+        print(f"processor.py:347 [{datetime.now().isoformat()}] - calculate_cosine_similarity: ERROR - Zero norm vector")
+        return 0.0
     similarity = dot_product / (norm1 * norm2)
     print(f"processor.py:348 [{datetime.now().isoformat()}] - calculate_cosine_similarity: Completed - similarity={similarity:.4f}")
     return similarity
@@ -403,6 +426,10 @@ def get_latest_message_in_channel(channel_id):
         LIMIT 1
     ''', (str(channel_id),))
     result = db_cursor.fetchone()
+    if result and result[5]:
+        result = list(result)
+        result[5] = parse_vector_string(result[5])
+        result = tuple(result)
     print(f"processor.py:358 [{datetime.now().isoformat()}] - get_latest_message_in_channel: Completed - found={result is not None}")
     return result
 
@@ -415,8 +442,9 @@ def get_conversation_representative_embedding(conversation_id):
     ''', (conversation_id,))
     result = db_cursor.fetchone()
     if result and result[0]:
+        parsed_embedding = parse_vector_string(result[0])
         print(f"processor.py:367 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Completed - found embedding")
-        return result[0]
+        return parsed_embedding
     print(f"processor.py:368 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Completed - no embedding found")
     return None
 
@@ -445,11 +473,13 @@ def update_conversation(conversation_id, new_embedding):
         return
     
     current_count = result[0]
-    current_avg_embedding = result[1]
+    current_avg_embedding = parse_vector_string(result[1])
     
     import numpy as np
-    current_avg_embedding = np.array(current_avg_embedding)
-    new_embedding = np.array(new_embedding)
+    new_embedding = parse_vector_string(new_embedding)
+    if current_avg_embedding is None or new_embedding is None:
+        print(f"processor.py:393 [{datetime.now().isoformat()}] - update_conversation: ERROR - Failed to parse embeddings")
+        return
     new_avg_embedding = ((current_avg_embedding * current_count) + new_embedding) / (current_count + 1)
     
     db_cursor.execute('''
