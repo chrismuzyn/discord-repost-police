@@ -657,4 +657,33 @@ async def process_message(message, reply=False):
             await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
             print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for attachment")
     
+    print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: Checking for text-only messages")
+    has_attachments = len(message.attachments) > 0
+    has_urls = any(urlparse(word.lower()).hostname and len(urlparse(word.lower()).path) > 4 and "discord.com" not in urlparse(word.lower()).hostname for word in message.content.split())
+    
+    if not has_attachments and not has_urls and message.content.strip():
+        print(f"processor.py:255 [{datetime.now().isoformat()}] - process_message: Found text-only message to process")
+        md5_hash = hashlib.md5(message.content.encode()).hexdigest()
+        visual_hash = 't'
+        server_id = message.guild.id
+        channel_id = message.channel.id
+        message_id = message.id
+        message_date = message.created_at
+        
+        print(f"processor.py:262 [{datetime.now().isoformat()}] - process_message: Calling message_tags for text-only message")
+        tags = message_tags(message)
+        print(f"processor.py:264 [{datetime.now().isoformat()}] - process_message: Calling embed for text-only message")
+        vector = embed(message.content)
+        orig_text = message.content
+        
+        message_data = {
+            'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+            'thread_id': str(message.thread.id) if message.thread else None,
+            'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
+        }
+        
+        print(f"processor.py:272 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for text-only message")
+        await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
+        print(f"processor.py:274 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for text-only message")
+    
     print(f"processor.py:249 [{datetime.now().isoformat()}] - process_message: Completed")
