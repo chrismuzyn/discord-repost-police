@@ -568,7 +568,7 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
     
     conversation_embedding = get_conversation_representative_embedding(candidate_conversation_id)
     
-    if not conversation_embedding:
+    if conversation_embedding is None:
         print(f"processor.py:464 [{datetime.now().isoformat()}] - detect_conversation: No conversation embedding found, creating new conversation")
         return create_conversation(channel_id, embedding)
     
