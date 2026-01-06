@@ -1,6 +1,9 @@
 import pika
 import json
 import os
+import base64
+import asyncio
+import aiohttp
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -9,9 +12,23 @@ load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.env'))
 RABBITMQ_URL = os.getenv("RABBITMQ_URL")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "discord_messages_queue")
 PROCESSED_QUEUE_NAME = os.getenv("PROCESSED_QUEUE_NAME", "processed_discord_messages_queue")
+MAX_ATTACHMENT_SIZE_MB = int(os.getenv("MAX_ATTACHMENT_SIZE_MB", "10"))
 
 def get_connection():
     return pika.URLParameters(RABBITMQ_URL)
+
+async def download_attachment_bytes(attachment):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as response:
+                if response.status == 200:
+                    return await response.read()
+                else:
+                    print(f"[{datetime.now().isoformat()}] ERROR DOWNLOADING ATTACHMENT - URL: {attachment.url} | Status: {response.status}")
+                    return None
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] EXCEPTION DOWNLOADING ATTACHMENT - URL: {attachment.url} | Error: {e}")
+        return None
 
 def publish_message(message):
     try:
@@ -51,6 +68,17 @@ def publish_message(message):
                 'size': attachment.size,
                 'url': attachment.url
             }
+
+            if attachment.size and attachment.size <= MAX_ATTACHMENT_SIZE_MB * 1024 * 1024:
+                attachment_bytes = asyncio.run(download_attachment_bytes(attachment))
+                if attachment_bytes:
+                    attachment_data['bytes'] = base64.b64encode(attachment_bytes).decode('utf-8')
+                    print(f"[{datetime.now().isoformat()}] DOWNLOADED ATTACHMENT - Filename: {attachment.filename} | Size: {len(attachment_bytes)} bytes | Message ID: {message_data['id']}")
+                else:
+                    print(f"[{datetime.now().isoformat()}] ATTACHMENT DOWNLOAD FAILED - Filename: {attachment.filename} | Message ID: {message_data['id']}")
+            else:
+                print(f"[{datetime.now().isoformat()}] ATTACHMENT SKIPPED (TOO LARGE) - Filename: {attachment.filename} | Size: {attachment.size} bytes | Max: {MAX_ATTACHMENT_SIZE_MB}MB | Message ID: {message_data['id']}")
+
             message_data['attachments'].append(attachment_data)
 
         channel.basic_publish(

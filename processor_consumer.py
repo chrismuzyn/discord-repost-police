@@ -1,7 +1,7 @@
 import pika
 import json
 import os
-import aiohttp
+import base64
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
@@ -72,9 +72,7 @@ class MockClient:
         self._http_client = None
 
     async def get_channel(self, channel_id):
-        async with aiohttp.ClientSession() as session:
-            session.headers.update({'Authorization': f'Bot {self.token}'})
-            return MockChannel(channel_id)
+        return MockChannel(channel_id)
 
     async def close(self):
         if self._http_client:
@@ -87,11 +85,17 @@ class MockAttachment:
         self.content_type = attachment_data['content_type']
         self.size = attachment_data['size']
         self.url = attachment_data['url']
+        self._bytes = attachment_data.get('bytes')
 
     async def read(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as response:
-                return await response.read()
+        if self._bytes:
+            return base64.b64decode(self._bytes.encode('utf-8'))
+        else:
+            print(f"[{datetime.now().isoformat()}] WARNING - No stored bytes for attachment {self.filename}, using URL as fallback")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url) as response:
+                    return await response.read()
 
 async def process_queue_message(message_data):
     reply = message_data.get('reply', False)
