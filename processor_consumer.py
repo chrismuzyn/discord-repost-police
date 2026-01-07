@@ -94,7 +94,7 @@ class MockClient:
             'bot': True
         })
 
-    async def get_channel(self, channel_id):
+    def get_channel(self, channel_id):
         return MockChannel(channel_id)
 
     async def close(self):
