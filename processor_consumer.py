@@ -171,6 +171,7 @@ def main():
     initialize_database()
     
     parameters = pika.URLParameters(RABBITMQ_URL)
+    parameters.heartbeat = 600
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
