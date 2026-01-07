@@ -39,9 +39,9 @@ async def fetch_messages(channel):
                     timestamp = datetime.now().isoformat()
                     content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
                     print(f"[{timestamp}] READ FROM DISCORD - Channel: {channel.name} | Message ID: {message.id} | Author: {message.author.name}#{message.author.discriminator} (ID: {message.author.id}) | Content: {content_preview} | Created: {message.created_at.isoformat()}")
-                    
-                    publish_message(message)
-                    publish_processed_message(message.id)
+
+                    await publish_message(message)
+                    await publish_processed_message(message.id)
                     
                     message_count += 1
                     
@@ -53,8 +53,8 @@ async def fetch_messages(channel):
                         retry_after = e.retry_after
                         print(f"[{datetime.now().isoformat()}] RATE LIMITED - Channel: {channel.name} | Message ID: {message.id} | Retry after: {retry_after}s")
                         await asyncio.sleep(retry_after)
-                        publish_message(message)
-                        publish_processed_message(message.id)
+                        await publish_message(message)
+                        await publish_processed_message(message.id)
                         message_count += 1
                     else:
                         print(f"[{datetime.now().isoformat()}] HTTP ERROR - Channel: {channel.name} | Message ID: {message.id} | Status: {e.status} | Error: {str(e)}")

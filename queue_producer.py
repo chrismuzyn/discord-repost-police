@@ -30,7 +30,7 @@ async def download_attachment_bytes(attachment):
         print(f"[{datetime.now().isoformat()}] EXCEPTION DOWNLOADING ATTACHMENT - URL: {attachment.url} | Error: {e}")
         return None
 
-def publish_message(message):
+async def publish_message(message):
     try:
         connection = pika.BlockingConnection(get_connection())
         channel = connection.channel()
@@ -70,7 +70,7 @@ def publish_message(message):
             }
 
             if attachment.size and attachment.size <= MAX_ATTACHMENT_SIZE_MB * 1024 * 1024:
-                attachment_bytes = asyncio.run(download_attachment_bytes(attachment))
+                attachment_bytes = await download_attachment_bytes(attachment)
                 if attachment_bytes:
                     attachment_data['bytes'] = base64.b64encode(attachment_bytes).decode('utf-8')
                     print(f"[{datetime.now().isoformat()}] DOWNLOADED ATTACHMENT - Filename: {attachment.filename} | Size: {len(attachment_bytes)} bytes | Message ID: {message_data['id']}")
@@ -96,7 +96,7 @@ def publish_message(message):
         print(f"[{datetime.now().isoformat()}] ERROR SENDING TO QUEUE - Queue: {QUEUE_NAME} | Message ID: {message.id if message else 'unknown'} | Error: {e}")
         raise
 
-def publish_processed_message(message_id):
+async def publish_processed_message(message_id):
     try:
         connection = pika.BlockingConnection(get_connection())
         channel = connection.channel()
