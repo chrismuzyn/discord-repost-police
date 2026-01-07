@@ -5,7 +5,7 @@ import base64
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
-from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png, initialize_database
+from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png, initialize_database, process_message
 from pillow_heif import register_heif_opener
 
 register_heif_opener()
@@ -100,47 +100,7 @@ class MockAttachment:
 async def process_queue_message(message_data):
     reply = message_data.get('reply', False)
     message = MockMessage(message_data)
-
-    for word in message.content.split():
-        from urllib.parse import urlparse
-        if urlparse(word.lower()).hostname:
-            if len(urlparse(word.lower()).path) > 4:
-                if "discord.com" not in urlparse(word.lower()).hostname:
-                    md5_hash = hashlib.md5(word.lower().encode()).hexdigest()
-                    visual_hash = 'l'
-                    server_id = message.guild.id
-                    channel_id = message.channel.id
-                    message_id = message.id
-                    message_date = message.created_at
-
-                    tags = message_tags(message)
-                    vector = embed(message.content)
-                    orig_text = message.content
-
-                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text, message_data)
-
-    if len(message.attachments) > 0:
-        for attachment in message.attachments:
-            attachment_bytes = await attachment.read()
-            try:
-                converted_png = convert_to_png(attachment_bytes, attachment.filename)
-                bytes_for_image = converted_png if converted_png else attachment_bytes
-                image = Image.open(io.BytesIO(bytes_for_image)).convert('RGB')
-            except:
-                continue
-
-            md5_hash = hashlib.md5(attachment_bytes).hexdigest()
-            visual_hash = neuralhash(image)
-            server_id = message.guild.id
-            channel_id = message.channel.id
-            message_id = message.id
-            message_date = message.created_at
-
-            tags = image_tags(attachment_bytes, attachment.filename)
-            vector = embed(message.content)
-            orig_text = message.content
-
-            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
+    await process_message(message, reply)
 
 def on_message(ch, method, properties, body):
     message_data = None
