@@ -52,7 +52,7 @@ class MockChannel:
 
 class MockAuthor:
     def __init__(self, message_data):
-        self.id = int(message_data['author_id'])
+        self.id = int(message_data['author_id']) if message_data['author_id'] is not None else None
         self.name = message_data['author_name']
         self.discriminator = message_data['author_discriminator']
         self.bot = message_data['bot']
@@ -85,6 +85,8 @@ class MockClient:
         self.token = token
         self._http_client = None
         bot_id = extract_bot_id_from_token(token)
+        if bot_id is None:
+            print(f"[{datetime.now().isoformat()}] WARNING - Could not extract bot ID from DISCORD_TOKEN, bot client.user.id will be None")
         self.user = MockAuthor({
             'author_id': bot_id,
             'author_name': 'Bot',
