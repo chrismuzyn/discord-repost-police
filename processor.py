@@ -667,6 +667,8 @@ async def process_message(message, reply=False):
     print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: Checking for text-only messages")
     has_urls = any(urlparse(word.lower()).hostname and len(urlparse(word.lower()).path) > 4 and "discord.com" not in urlparse(word.lower()).hostname for word in message.content.split())
     
+    print(f"MESSAGE CONTENT STRIP: {message.content.strip()}")
+    print(f"HASURLS: {has_urls}")
     if len(message.attachments) == 0 and not has_urls and message.content.strip():
         await _process_content(message, reply, 'text')
     
