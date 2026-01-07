@@ -528,7 +528,6 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
     
     if thread_id:
         print(f"processor.py:429 [{datetime.now().isoformat()}] - detect_conversation: Message is in a thread")
-        latest_in_thread = db_cursor.fetchone()
         db_cursor.execute('''
             SELECT conversation_id
             FROM attachment_hashes
