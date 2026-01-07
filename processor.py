@@ -194,86 +194,86 @@ def neuralhash(image):
     return hash_hex
 
 
-async def check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None, message_data=None):
-    print(f"processor.py:69 [{datetime.now().isoformat()}] - check_and_ingest: Starting - message_id={message_id}, md5={md5_hash[:8]}..., visual={visual_hash}")
+async def ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None, message_data=None):
+    print(f"processor.py:69 [{datetime.now().isoformat()}] - ingest: Starting - message_id={message_id}, md5={md5_hash[:8]}..., visual={visual_hash}")
     
     if tags is None or not tags:
-        print(f"processor.py:70 [{datetime.now().isoformat()}] - check_and_ingest: ERROR - tags is None or empty: {tags}")
+        print(f"processor.py:70 [{datetime.now().isoformat()}] - ingest: ERROR - tags is None or empty: {tags}")
         raise Exception(f"Tags cannot be None or empty. tags={tags}")
     
-    print(f"processor.py:71 [{datetime.now().isoformat()}] - check_and_ingest: Tags validated, count={len(tags)}")
+    print(f"processor.py:71 [{datetime.now().isoformat()}] - ingest: Tags validated, count={len(tags)}")
     
     if message_data is None:
         message_data = {}
     
     conversation_id = detect_conversation(message_data, vector, channel_id, message_date)
-    print(f"processor.py:74 [{datetime.now().isoformat()}] - check_and_ingest: conversation_id={conversation_id}")
+    print(f"processor.py:74 [{datetime.now().isoformat()}] - ingest: conversation_id={conversation_id}")
     
-    print(f"processor.py:75 [{datetime.now().isoformat()}] - check_and_ingest: Querying DB for existing hashes")
-    db_cursor.execute('SELECT DISTINCT ON (md5_hash, visual_hash) message_id, channel_id FROM attachment_hashes WHERE (server_id = %s) AND (md5_hash = %s OR (visual_hash = %s AND visual_hash != \'l\')) ORDER BY md5_hash, visual_hash, message_date ASC', (server_id, md5_hash, visual_hash))
-    existing_message = db_cursor.fetchone()
-    print(f"processor.py:77 [{datetime.now().isoformat()}] - check_and_ingest: DB query complete, existing_message={existing_message is not None}")
+    #print(f"processor.py:75 [{datetime.now().isoformat()}] - ingest: Querying DB for existing hashes")
+    #db_cursor.execute('SELECT DISTINCT ON (md5_hash, visual_hash) message_id, channel_id FROM attachment_hashes WHERE (server_id = %s) AND (md5_hash = %s OR (visual_hash = %s AND visual_hash != \'l\')) ORDER BY md5_hash, visual_hash, message_date ASC', (server_id, md5_hash, visual_hash))
+    #existing_message = db_cursor.fetchone()
+    #print(f"processor.py:77 [{datetime.now().isoformat()}] - ingest: DB query complete, existing_message={existing_message is not None}")
     
-    if existing_message != None:
-        print(f"processor.py:74 [{datetime.now().isoformat()}] - check_and_ingest: Found existing match in channel {existing_message[1]}")
-        off_channel = message.client.get_channel(int(existing_message[1]))
-        try:
-            print(f"processor.py:76 [{datetime.now().isoformat()}] - check_and_ingest: Fetching Discord message {existing_message[0]}")
-            off_message = await off_channel.fetch_message(existing_message[0])
-            print(f"processor.py:78 [{datetime.now().isoformat()}] - check_and_ingest: Discord message fetched successfully")
-        except Exception as e:
-            print(f"processor.py:80 [{datetime.now().isoformat()}] - check_and_ingest: ERROR fetching Discord message: {e}")
-            print("Inserting image that we can't find anymore.")
-            if reply:
-                print(f"processor.py:83 [{datetime.now().isoformat()}] - check_and_ingest: Sending Discord reply about missing message")
-                await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
-            print(f"processor.py:89 [{datetime.now().isoformat()}] - check_and_ingest: Deleting old entry from DB")
-            db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
-            db_conn.commit()
-            print(f"processor.py:92 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-            db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
-            db_conn.commit()
-            update_conversation(conversation_id, vector)
-            print(f"processor.py:95 [{datetime.now().isoformat()}] - check_and_ingest: Completed (missing message case)")
-            return
-        
-        print("Inserting image that we already have a match for.")
-        print(f"processor.py:98 [{datetime.now().isoformat()}] - check_and_ingest: Inserting duplicate entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
-        db_conn.commit()
-        update_conversation(conversation_id, vector)
-        print(f"processor.py:101 [{datetime.now().isoformat()}] - check_and_ingest: DB insert complete")
+    #if existing_message != None:
+    #    print(f"processor.py:74 [{datetime.now().isoformat()}] - ingest: Found existing match in channel {existing_message[1]}")
+    #    off_channel = message.client.get_channel(int(existing_message[1]))
+    #    try:
+    #        print(f"processor.py:76 [{datetime.now().isoformat()}] - ingest: Fetching Discord message {existing_message[0]}")
+    #        off_message = await off_channel.fetch_message(existing_message[0])
+    #        print(f"processor.py:78 [{datetime.now().isoformat()}] - ingest: Discord message fetched successfully")
+    #    except Exception as e:
+    #        print(f"processor.py:80 [{datetime.now().isoformat()}] - ingest: ERROR fetching Discord message: {e}")
+    #        print("Inserting image that we can't find anymore.")
+    #        if reply:
+    #            print(f"processor.py:83 [{datetime.now().isoformat()}] - ingest: Sending Discord reply about missing message")
+    #            await message.channel.send("👮 I have this file/link already but I can't find the message it came from.  I'll let you off this time.")
+    #        print(f"processor.py:89 [{datetime.now().isoformat()}] - ingest: Deleting old entry from DB")
+    #        db_cursor.execute('DELETE FROM attachment_hashes WHERE message_id = %s AND channel_id = %s', (existing_message[0], existing_message[1]))
+    #        db_conn.commit()
+    #        print(f"processor.py:92 [{datetime.now().isoformat()}] - ingest: Inserting new entry to DB")
+    #        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+    #        db_conn.commit()
+    #        update_conversation(conversation_id, vector)
+    #        print(f"processor.py:95 [{datetime.now().isoformat()}] - ingest: Completed (missing message case)")
+    #        return
+    #    
+    #    print("Inserting image that we already have a match for.")
+    #    print(f"processor.py:98 [{datetime.now().isoformat()}] - ingest: Inserting duplicate entry to DB")
+    #    db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+    #    db_conn.commit()
+    #    update_conversation(conversation_id, vector)
+    #    print(f"processor.py:101 [{datetime.now().isoformat()}] - ingest: DB insert complete")
 
-        if reply:
-            print(f"processor.py:100 [{datetime.now().isoformat()}] - check_and_ingest: Preparing Discord reply")
-            original_msg_url = off_message.jump_url
-            insult = hit_me()
-            if visual_hash != 'l':
-                possible_responses = [
-                    "Here's the original post that was probably also from reddit, you {0}.".format(insult),
-                    "Do you both browse reddit together, you {0}.".format(insult),
-                    "You {0}, do you even read this chat?".format(insult),
-                    "Ya, I'm gonna have to bring you down to the station.",
-                    "Fucking {0}.".format(insult) ]
-                response = random.choice(possible_responses)
-            else:
-                possible_responses = ["You {0}, do you even read this chat?".format(insult), "Ya, I'm gonna have to bring you down to the station.", "Fucking {0}.".format(insult)]
-                if "reddit.com" in word:
-                    response = "Is reddit down for anybody else?"
-                else:
-                    response = random.choice(possible_responses)
+    #    if reply:
+    #        print(f"processor.py:100 [{datetime.now().isoformat()}] - ingest: Preparing Discord reply")
+    #        original_msg_url = off_message.jump_url
+    #        insult = hit_me()
+    #        if visual_hash != 'l':
+    #            possible_responses = [
+    #                "Here's the original post that was probably also from reddit, you {0}.".format(insult),
+    #                "Do you both browse reddit together, you {0}.".format(insult),
+    #                "You {0}, do you even read this chat?".format(insult),
+    #                "Ya, I'm gonna have to bring you down to the station.",
+    #                "Fucking {0}.".format(insult) ]
+    #            response = random.choice(possible_responses)
+    #        else:
+    #            possible_responses = ["You {0}, do you even read this chat?".format(insult), "Ya, I'm gonna have to bring you down to the station.", "Fucking {0}.".format(insult)]
+    #            if "reddit.com" in word:
+    #                response = "Is reddit down for anybody else?"
+    #            else:
+    #                response = random.choice(possible_responses)
 
-            print(f"processor.py:117 [{datetime.now().isoformat()}] - check_and_ingest: Sending Discord reply")
-            await message.reply("🚨🚨🚨\n{0}\n{1}".format(response,original_msg_url))
-            print(f"processor.py:119 [{datetime.now().isoformat()}] - check_and_ingest: Discord reply sent")
+    #        print(f"processor.py:117 [{datetime.now().isoformat()}] - ingest: Sending Discord reply")
+    #        await message.reply("🚨🚨🚨\n{0}\n{1}".format(response,original_msg_url))
+    #        print(f"processor.py:119 [{datetime.now().isoformat()}] - ingest: Discord reply sent")
 
-    else:
-        print("Inserting new image.")
-        print(f"processor.py:125 [{datetime.now().isoformat()}] - check_and_ingest: Inserting new entry to DB")
-        db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
-        db_conn.commit()
-        update_conversation(conversation_id, vector)
-        print(f"processor.py:128 [{datetime.now().isoformat()}] - check_and_ingest: Completed (new image case)")
+    #else:
+    print("Inserting new image.")
+    print(f"processor.py:125 [{datetime.now().isoformat()}] - ingest: Inserting new entry to DB")
+    db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+    db_conn.commit()
+    update_conversation(conversation_id, vector)
+    print(f"processor.py:128 [{datetime.now().isoformat()}] - ingest: Completed (new image case)")
 
 def image_tags(attachment, filename=None):
     print(f"processor.py:127 [{datetime.now().isoformat()}] - image_tags: Starting")
@@ -640,8 +640,8 @@ async def _process_content(message, reply, content_type, content_data=None):
         'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
     }
     
-    print(f"processor.py:233 [{datetime.now().isoformat()}] - _process_content: Calling check_and_ingest for {content_type}")
-    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word_for_check, reply, tags, vector, orig_text, message_data)
+    print(f"processor.py:233 [{datetime.now().isoformat()}] - _process_content: Calling ingest for {content_type}")
+    await ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word_for_check, reply, tags, vector, orig_text, message_data)
     print(f"processor.py:234 [{datetime.now().isoformat()}] - _process_content: Completed")
     return True
 

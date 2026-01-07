@@ -5,7 +5,7 @@ import base64
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
-from processor import check_and_ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png, initialize_database, process_message
+from processor import ingest, neuralhash, image_tags, message_tags, embed, hashlib, Image, io, convert_to_png, initialize_database, process_message
 from pillow_heif import register_heif_opener
 
 register_heif_opener()
