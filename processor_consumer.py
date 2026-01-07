@@ -28,7 +28,8 @@ class MockMessage:
         self.attachments = [MockAttachment(att) for att in message_data.get('attachments', [])]
         self.client = MockClient(DISCORD_TOKEN)
         self.reference = MockReference(message_data.get('reference_message_id'))
-        self.thread = MockThread(message_data.get('thread_id'), message_data.get('thread_parent_id'))
+        thread_id = message_data.get('thread_id')
+        self.thread = MockThread(thread_id, message_data.get('thread_parent_id')) if thread_id else None
 
 class MockGuild:
     def __init__(self, guild_id):
