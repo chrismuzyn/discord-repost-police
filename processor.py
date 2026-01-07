@@ -582,108 +582,92 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
         print(f"processor.py:471 [{datetime.now().isoformat()}] - detect_conversation: Message is off-topic, creating new conversation")
         return create_conversation(channel_id, embedding)
 
+async def _process_content(message, reply, content_type, content_data=None):
+    print(f"processor.py:186 [{datetime.now().isoformat()}] - _process_content: Starting - content_type={content_type}")
+    
+    if content_type == 'url':
+        word = content_data
+        print(f"processor.py:189 [{datetime.now().isoformat()}] - _process_content: Processing URL: {word}")
+        md5_hash = hashlib.md5(word.lower().encode()).hexdigest()
+        visual_hash = 'l'
+        print(f"processor.py:192 [{datetime.now().isoformat()}] - _process_content: Calling message_tags for URL")
+        tags = message_tags(message)
+        word_for_check = word
+    
+    elif content_type == 'attachment':
+        attachment = content_data
+        print(f"processor.py:196 [{datetime.now().isoformat()}] - _process_content: Processing attachment: {attachment.filename}")
+        attachment_bytes = await attachment.read()
+        try:
+            converted_png = convert_to_png(attachment_bytes, attachment.filename)
+            bytes_for_image = converted_png if converted_png else attachment_bytes
+            image = Image.open(io.BytesIO(bytes_for_image)).convert('RGB')
+            print(f"processor.py:202 [{datetime.now().isoformat()}] - _process_content: Image opened successfully")
+        except Exception as e:
+            print(f"processor.py:204 [{datetime.now().isoformat()}] - _process_content: Failed to open image: {e}")
+            return None
+        
+        md5_hash = hashlib.md5(attachment_bytes).hexdigest()
+        print(f"processor.py:208 [{datetime.now().isoformat()}] - _process_content: Calling neuralhash for attachment")
+        visual_hash = neuralhash(image)
+        print(f"processor.py:209 [{datetime.now().isoformat()}] - _process_content: Calling image_tags for attachment")
+        tags = image_tags(attachment_bytes, attachment.filename)
+        word_for_check = ""
+    
+    elif content_type == 'text':
+        print(f"processor.py:212 [{datetime.now().isoformat()}] - _process_content: Processing text-only message")
+        md5_hash = hashlib.md5(message.content.encode()).hexdigest()
+        visual_hash = 't'
+        print(f"processor.py:215 [{datetime.now().isoformat()}] - _process_content: Calling message_tags for text-only message")
+        tags = message_tags(message)
+        word_for_check = ""
+    
+    else:
+        print(f"processor.py:219 [{datetime.now().isoformat()}] - _process_content: ERROR - Unknown content_type: {content_type}")
+        return None
+    
+    server_id = message.guild.id
+    channel_id = message.channel.id
+    message_id = message.id
+    message_date = message.created_at
+    
+    print(f"processor.py:225 [{datetime.now().isoformat()}] - _process_content: Calling embed for content")
+    vector = embed(message.content)
+    orig_text = message.content
+    
+    message_data = {
+        'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
+        'thread_id': str(message.thread.id) if message.thread else None,
+        'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
+    }
+    
+    print(f"processor.py:233 [{datetime.now().isoformat()}] - _process_content: Calling check_and_ingest for {content_type}")
+    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word_for_check, reply, tags, vector, orig_text, message_data)
+    print(f"processor.py:234 [{datetime.now().isoformat()}] - _process_content: Completed")
+    return True
+
 async def process_message(message, reply=False):
     print(f"processor.py:186 [{datetime.now().isoformat()}] - process_message: Starting - message_id={message.id}, reply={reply}")
     if message.author == message.client.user or message.author.bot:
         print(f"processor.py:189 [{datetime.now().isoformat()}] - process_message: Skipping bot message")
-        pass
+        return
 
     print(f"processor.py:192 [{datetime.now().isoformat()}] - process_message: Checking for URLs in message content")
     for word in message.content.split():
-        if urlparse(word.lower()).hostname:
-            if len(urlparse(word.lower()).path) > 4:
-                if "discord.com" not in urlparse(word.lower()).hostname:
-                    print(f"processor.py:197 [{datetime.now().isoformat()}] - process_message: Found URL to process: {word}")
-                    md5_hash = hashlib.md5(word.lower().encode()).hexdigest()
-                    visual_hash = 'l'
-                    server_id = message.guild.id
-                    channel_id = message.channel.id
-                    message_id = message.id
-                    message_date = message.created_at
-
-                    print(f"processor.py:208 [{datetime.now().isoformat()}] - process_message: Calling message_tags for URL")
-                    tags = message_tags(message)
-                    print(f"processor.py:210 [{datetime.now().isoformat()}] - process_message: Calling embed for URL")
-                    vector = embed(message.content)
-                    orig_text = message.content
-
-                    message_data = {
-                        'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
-                        'thread_id': str(message.thread.id) if message.thread else None,
-                        'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
-                    }
-
-                    print(f"processor.py:218 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for URL")
-                    await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply, tags, vector, orig_text, message_data)
-                    print(f"processor.py:220 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for URL")
+        parsed = urlparse(word.lower())
+        if parsed.hostname and len(parsed.path) > 4 and "discord.com" not in parsed.hostname:
+            await _process_content(message, reply, 'url', word)
 
     print(f"processor.py:216 [{datetime.now().isoformat()}] - process_message: Checking for attachments")
     if len(message.attachments) > 0:
         print(f"processor.py:218 [{datetime.now().isoformat()}] - process_message: Found {len(message.attachments)} attachment(s)")
         for attachment in message.attachments:
-            print(f"processor.py:220 [{datetime.now().isoformat()}] - process_message: Reading attachment {attachment.filename}")
-            attachment_bytes = await attachment.read()
-            try:
-                converted_png = convert_to_png(attachment_bytes, attachment.filename)
-                bytes_for_image = converted_png if converted_png else attachment_bytes
-                image = Image.open(io.BytesIO(bytes_for_image)).convert('RGB')
-                print(f"processor.py:225 [{datetime.now().isoformat()}] - process_message: Image opened successfully")
-            except Exception as e:
-                print(f"processor.py:227 [{datetime.now().isoformat()}] - process_message: Failed to open image: {e}")
-                continue
+            await _process_content(message, reply, 'attachment', attachment)
 
-            #hash is always taken of the original attachment, not the converted image, if a conversion was performed
-            md5_hash = hashlib.md5(attachment_bytes).hexdigest()
-            print(f"processor.py:231 [{datetime.now().isoformat()}] - process_message: Calling neuralhash for attachment")
-            visual_hash = neuralhash(image)
-            server_id = message.guild.id
-            channel_id = message.channel.id
-            message_id = message.id
-            message_date = message.created_at
-
-            print(f"processor.py:241 [{datetime.now().isoformat()}] - process_message: Calling image_tags for attachment")
-            tags = image_tags(attachment_bytes, attachment.filename)
-            print(f"processor.py:243 [{datetime.now().isoformat()}] - process_message: Calling embed for attachment")
-            vector = embed(message.content)
-            orig_text = message.content
-
-            message_data = {
-                'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
-                'thread_id': str(message.thread.id) if message.thread else None,
-                'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
-            }
-
-            print(f"processor.py:251 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for attachment")
-            await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
-            print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for attachment")
-    
     print(f"processor.py:253 [{datetime.now().isoformat()}] - process_message: Checking for text-only messages")
-    has_attachments = len(message.attachments) > 0
     has_urls = any(urlparse(word.lower()).hostname and len(urlparse(word.lower()).path) > 4 and "discord.com" not in urlparse(word.lower()).hostname for word in message.content.split())
     
-    if not has_attachments and not has_urls and message.content.strip():
-        print(f"processor.py:255 [{datetime.now().isoformat()}] - process_message: Found text-only message to process")
-        md5_hash = hashlib.md5(message.content.encode()).hexdigest()
-        visual_hash = 't'
-        server_id = message.guild.id
-        channel_id = message.channel.id
-        message_id = message.id
-        message_date = message.created_at
-        
-        print(f"processor.py:262 [{datetime.now().isoformat()}] - process_message: Calling message_tags for text-only message")
-        tags = message_tags(message)
-        print(f"processor.py:264 [{datetime.now().isoformat()}] - process_message: Calling embed for text-only message")
-        vector = embed(message.content)
-        orig_text = message.content
-        
-        message_data = {
-            'reference_message_id': str(message.reference.message_id) if message.reference and message.reference.message_id else None,
-            'thread_id': str(message.thread.id) if message.thread else None,
-            'thread_parent_id': str(message.thread.parent_id) if message.thread and message.thread.parent_id else None
-        }
-        
-        print(f"processor.py:272 [{datetime.now().isoformat()}] - process_message: Calling check_and_ingest for text-only message")
-        await check_and_ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, "", reply, tags, vector, orig_text, message_data)
-        print(f"processor.py:274 [{datetime.now().isoformat()}] - process_message: check_and_ingest completed for text-only message")
+    if len(message.attachments) == 0 and not has_urls and message.content.strip():
+        await _process_content(message, reply, 'text')
     
     print(f"processor.py:249 [{datetime.now().isoformat()}] - process_message: Completed")
