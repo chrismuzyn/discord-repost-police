@@ -66,10 +66,31 @@ class MockThread:
         self.id = int(thread_id) if thread_id else None
         self.parent_id = int(parent_id) if parent_id else None
 
+def extract_bot_id_from_token(token):
+    parts = token.split('.')
+    if len(parts) >= 2:
+        try:
+            payload = parts[1]
+            payload += '=' * ((4 - len(payload) % 4) % 4)
+            decoded = base64.urlsafe_b64decode(payload)
+            import json
+            data = json.loads(decoded)
+            return data.get('user_id')
+        except:
+            pass
+    return None
+
 class MockClient:
     def __init__(self, token):
         self.token = token
         self._http_client = None
+        bot_id = extract_bot_id_from_token(token)
+        self.user = MockAuthor({
+            'author_id': bot_id,
+            'author_name': 'Bot',
+            'author_discriminator': '0000',
+            'bot': True
+        })
 
     async def get_channel(self, channel_id):
         return MockChannel(channel_id)
