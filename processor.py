@@ -103,7 +103,8 @@ def initialize_database():
                 message_date TIMESTAMP NOT NULL,
                 tags JSONB,
                 vector vector(4096),
-                orig_text TEXT
+                orig_text TEXT,
+                embedding_model VARCHAR(100)
             );
         """)
         db_cursor.execute("""
@@ -114,7 +115,8 @@ def initialize_database():
                 started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 message_count INT NOT NULL DEFAULT 1,
-                representative_embedding vector(4096)
+                representative_embedding vector(4096),
+                embedding_model VARCHAR(100)
             );
         """)
         db_cursor.execute("""
@@ -194,7 +196,7 @@ def neuralhash(image):
     return hash_hex
 
 
-async def ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None, message_data=None):
+async def ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word, reply=False, tags=None, vector=None, orig_text=None, message_data=None, embedding_model=None):
     print(f"processor.py:69 [{datetime.now().isoformat()}] - ingest: Starting - message_id={message_id}, md5={md5_hash[:8]}..., visual={visual_hash}")
     
     if tags is None or not tags:
@@ -206,7 +208,7 @@ async def ingest(md5_hash, visual_hash, server_id, channel_id, message_id, messa
     if message_data is None:
         message_data = {}
     
-    conversation_id = detect_conversation(message_data, vector, channel_id, message_date)
+    conversation_id = detect_conversation(message_data, vector, channel_id, message_date, embedding_model)
     print(f"processor.py:74 [{datetime.now().isoformat()}] - ingest: conversation_id={conversation_id}")
     
     #print(f"processor.py:75 [{datetime.now().isoformat()}] - ingest: Querying DB for existing hashes")
@@ -270,7 +272,7 @@ async def ingest(md5_hash, visual_hash, server_id, channel_id, message_id, messa
     #else:
     print("Inserting new image.")
     print(f"processor.py:125 [{datetime.now().isoformat()}] - ingest: Inserting new entry to DB")
-    db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id))
+    db_cursor.execute('INSERT INTO attachment_hashes (md5_hash, visual_hash, server_id, channel_id, message_id, message_date, tags, vector, orig_text, conversation_id, embedding_model) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)', (md5_hash, visual_hash, server_id, str(channel_id), message_id, message_date, json.dumps(tags), vector, orig_text, conversation_id, embedding_model))
     db_conn.commit()
     update_conversation(conversation_id, vector)
     print(f"processor.py:128 [{datetime.now().isoformat()}] - ingest: Completed (new image case)")
@@ -389,6 +391,7 @@ def message_tags(message):
 
 def embed(text, image_bytes=None):
     print(f"processor.py:175 [{datetime.now().isoformat()}] - embed: Starting")
+    model_name = "Qwen3-VL-Embedding"
     
     if image_bytes is not None:
         print(f"processor.py:176 [{datetime.now().isoformat()}] - embed: Processing multimodal embedding (image + text)")
@@ -418,20 +421,20 @@ def embed(text, image_bytes=None):
         
         print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for multimodal embedding")
         response = embedding_client.embeddings.create(
-            model="Qwen3-VL-Embedding",
+            model=model_name,
             messages=messages
         )
     else:
         print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Processing text-only embedding")
         print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for embedding")
         response = embedding_client.embeddings.create(
-            model="Qwen3-VL-Embedding",
+            model=model_name,
             input=text
         )
     
     print(f"processor.py:182 [{datetime.now().isoformat()}] - embed: OpenAI API response received")
     print(f"processor.py:183 [{datetime.now().isoformat()}] - embed: Completed")
-    return response.data[0].embedding
+    return response.data[0].embedding, model_name
 
 def calculate_cosine_similarity(embedding1, embedding2):
     print(f"processor.py:342 [{datetime.now().isoformat()}] - calculate_cosine_similarity: Starting")
@@ -483,13 +486,13 @@ def get_conversation_representative_embedding(conversation_id):
     print(f"processor.py:368 [{datetime.now().isoformat()}] - get_conversation_representative_embedding: Completed - no embedding found")
     return None
 
-def create_conversation(channel_id, initial_embedding):
+def create_conversation(channel_id, initial_embedding, embedding_model):
     print(f"processor.py:370 [{datetime.now().isoformat()}] - create_conversation: Starting - channel_id={channel_id}")
     db_cursor.execute('''
-        INSERT INTO conversations (source, channel_id, started_at, last_message_at, message_count, representative_embedding)
-        VALUES (%s, %s, now(), now(), 1, %s)
+        INSERT INTO conversations (source, channel_id, started_at, last_message_at, message_count, representative_embedding, embedding_model)
+        VALUES (%s, %s, now(), now(), 1, %s, %s)
         RETURNING id
-    ''', (SOURCE_IDENTIFIER, str(channel_id), initial_embedding))
+    ''', (SOURCE_IDENTIFIER, str(channel_id), initial_embedding, embedding_model))
     conversation_id = db_cursor.fetchone()[0]
     db_conn.commit()
     print(f"processor.py:378 [{datetime.now().isoformat()}] - create_conversation: Completed - conversation_id={conversation_id}")
@@ -542,7 +545,7 @@ def get_conversation_id_by_message_id(message_id):
     print(f"processor.py:412 [{datetime.now().isoformat()}] - get_conversation_id_by_message_id: Completed - no conversation_id found")
     return None
 
-def detect_conversation(message_data, embedding, channel_id, message_date):
+def detect_conversation(message_data, embedding, channel_id, message_date, embedding_model):
     print(f"processor.py:414 [{datetime.now().isoformat()}] - detect_conversation: Starting - channel_id={channel_id}")
     
     reference_message_id = message_data.get('reference_message_id')
@@ -559,7 +562,7 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
             return parent_conversation_id
         else:
             print(f"processor.py:425 [{datetime.now().isoformat()}] - detect_conversation: Parent message not found in DB, creating new conversation")
-            return create_conversation(channel_id, embedding)
+            return create_conversation(channel_id, embedding, embedding_model)
     
     if thread_id:
         print(f"processor.py:429 [{datetime.now().isoformat()}] - detect_conversation: Message is in a thread")
@@ -575,14 +578,14 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
             return thread_result[0]
         else:
             print(f"processor.py:440 [{datetime.now().isoformat()}] - detect_conversation: Thread not found in DB, creating new conversation")
-            return create_conversation(channel_id, embedding)
+            return create_conversation(channel_id, embedding, embedding_model)
     
     print(f"processor.py:444 [{datetime.now().isoformat()}] - detect_conversation: Layer 2 - Checking heuristic signals")
     latest_message = get_latest_message_in_channel(channel_id)
     
     if not latest_message:
         print(f"processor.py:447 [{datetime.now().isoformat()}] - detect_conversation: No previous message found, creating new conversation")
-        return create_conversation(channel_id, embedding)
+        return create_conversation(channel_id, embedding, embedding_model)
     
     latest_message_date = latest_message[3]
     message_date = message_date.replace(tzinfo=None)
@@ -591,20 +594,20 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
     
     if time_diff > CONVERSATION_TIMEOUT:
         print(f"processor.py:453 [{datetime.now().isoformat()}] - detect_conversation: Time diff exceeds timeout, creating new conversation")
-        return create_conversation(channel_id, embedding)
+        return create_conversation(channel_id, embedding, embedding_model)
     
     print(f"processor.py:456 [{datetime.now().isoformat()}] - detect_conversation: Layer 3 - Checking semantic coherence")
     candidate_conversation_id = latest_message[4]
     
     if not candidate_conversation_id:
         print(f"processor.py:459 [{datetime.now().isoformat()}] - detect_conversation: Latest message has no conversation_id, creating new conversation")
-        return create_conversation(channel_id, embedding)
+        return create_conversation(channel_id, embedding, embedding_model)
     
     conversation_embedding = get_conversation_representative_embedding(candidate_conversation_id)
     
     if conversation_embedding is None:
         print(f"processor.py:464 [{datetime.now().isoformat()}] - detect_conversation: No conversation embedding found, creating new conversation")
-        return create_conversation(channel_id, embedding)
+        return create_conversation(channel_id, embedding, embedding_model)
     
     similarity = calculate_cosine_similarity(embedding, conversation_embedding)
     print(f"processor.py:467 [{datetime.now().isoformat()}] - detect_conversation: similarity={similarity:.4f}, threshold={SEMANTIC_DISTANCE_THRESHOLD}")
@@ -614,7 +617,7 @@ def detect_conversation(message_data, embedding, channel_id, message_date):
         return candidate_conversation_id
     else:
         print(f"processor.py:471 [{datetime.now().isoformat()}] - detect_conversation: Message is off-topic, creating new conversation")
-        return create_conversation(channel_id, embedding)
+        return create_conversation(channel_id, embedding, embedding_model)
 
 async def _process_content(message, reply, content_type, content_data=None):
     print(f"processor.py:186 [{datetime.now().isoformat()}] - _process_content: Starting - content_type={content_type}")
@@ -670,7 +673,7 @@ async def _process_content(message, reply, content_type, content_data=None):
     message_date = message.created_at
     
     print(f"processor.py:225 [{datetime.now().isoformat()}] - _process_content: Calling embed for content")
-    vector = embed(message.content, image_bytes_for_embedding)
+    vector, embedding_model = embed(message.content, image_bytes_for_embedding)
     orig_text = message.content
     
     message_data = {
@@ -680,7 +683,7 @@ async def _process_content(message, reply, content_type, content_data=None):
     }
     
     print(f"processor.py:233 [{datetime.now().isoformat()}] - _process_content: Calling ingest for {content_type}")
-    await ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word_for_check, reply, tags, vector, orig_text, message_data)
+    await ingest(md5_hash, visual_hash, server_id, channel_id, message_id, message_date, message, word_for_check, reply, tags, vector, orig_text, message_data, embedding_model)
     print(f"processor.py:234 [{datetime.now().isoformat()}] - _process_content: Completed")
     return True
 
