@@ -618,7 +618,8 @@ async def _process_content(message, reply, content_type, content_data=None):
         md5_hash = hashlib.md5(message.content.encode()).hexdigest()
         visual_hash = 't'
         print(f"processor.py:215 [{datetime.now().isoformat()}] - _process_content: Calling message_tags for text-only message")
-        tags = message_tags(message)
+        #tags = message_tags(message)
+        tags = [""]
         word_for_check = ""
     
     else:
