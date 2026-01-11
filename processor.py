@@ -387,48 +387,13 @@ def message_tags(message):
 
     return tags
 
-def embed(text, image_bytes=None):
+def embed(text):
     print(f"processor.py:175 [{datetime.now().isoformat()}] - embed: Starting")
-    
-    if image_bytes is not None:
-        print(f"processor.py:176 [{datetime.now().isoformat()}] - embed: Processing multimodal embedding (image + text)")
-        
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        buffered = io.BytesIO()
-        image.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{img_str}"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": text or ""
-                    }
-                ]
-            }
-        ]
-        
-        print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for multimodal embedding")
-        response = embedding_client.embeddings.create(
-            model="Qwen3-VL-Embedding",
-            messages=messages
-        )
-    else:
-        print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Processing text-only embedding")
-        print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for embedding")
-        response = embedding_client.embeddings.create(
-            model="Qwen3-VL-Embedding",
-            input=text
-        )
-    
+    print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for embedding")
+    response = embedding_client.embeddings.create(
+        model="llama-embed-nemotron",
+        input=text
+    )
     print(f"processor.py:182 [{datetime.now().isoformat()}] - embed: OpenAI API response received")
     print(f"processor.py:183 [{datetime.now().isoformat()}] - embed: Completed")
     return response.data[0].embedding
@@ -627,7 +592,6 @@ async def _process_content(message, reply, content_type, content_data=None):
         print(f"processor.py:192 [{datetime.now().isoformat()}] - _process_content: Calling message_tags for URL")
         tags = message_tags(message)
         word_for_check = word
-        image_bytes_for_embedding = None
     
     elif content_type == 'attachment':
         attachment = content_data
@@ -648,7 +612,6 @@ async def _process_content(message, reply, content_type, content_data=None):
         print(f"processor.py:209 [{datetime.now().isoformat()}] - _process_content: Calling image_tags for attachment")
         tags = image_tags(attachment_bytes, attachment.filename)
         word_for_check = ""
-        image_bytes_for_embedding = bytes_for_image
     
     elif content_type == 'text':
         print(f"processor.py:212 [{datetime.now().isoformat()}] - _process_content: Processing text-only message")
@@ -658,7 +621,6 @@ async def _process_content(message, reply, content_type, content_data=None):
         #tags = message_tags(message)
         tags = [""]
         word_for_check = ""
-        image_bytes_for_embedding = None
     
     else:
         print(f"processor.py:219 [{datetime.now().isoformat()}] - _process_content: ERROR - Unknown content_type: {content_type}")
@@ -670,7 +632,7 @@ async def _process_content(message, reply, content_type, content_data=None):
     message_date = message.created_at
     
     print(f"processor.py:225 [{datetime.now().isoformat()}] - _process_content: Calling embed for content")
-    vector = embed(message.content, image_bytes_for_embedding)
+    vector = embed(message.content)
     orig_text = message.content
     
     message_data = {
