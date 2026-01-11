@@ -422,7 +422,7 @@ def embed(text, image_bytes=None):
         print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Calling OpenAI API for multimodal embedding")
         response = embedding_client.embeddings.create(
             model=model_name,
-            input=messages
+            messages=messages
         )
     else:
         print(f"processor.py:177 [{datetime.now().isoformat()}] - embed: Processing text-only embedding")
