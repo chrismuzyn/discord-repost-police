@@ -594,6 +594,7 @@ async def _process_content(message, reply, content_type, content_data=None):
         print(f"processor.py:192 [{datetime.now().isoformat()}] - _process_content: Calling message_tags for URL")
         tags = message_tags(message)
         word_for_check = word
+        vector, embedding_model = embed(message.content)
     
     elif content_type == 'attachment':
         attachment = content_data
@@ -614,6 +615,7 @@ async def _process_content(message, reply, content_type, content_data=None):
         print(f"processor.py:209 [{datetime.now().isoformat()}] - _process_content: Calling image_tags for attachment")
         tags = image_tags(attachment_bytes, attachment.filename)
         word_for_check = ""
+        vector, embedding_model = embed(', '.join(tags))
     
     elif content_type == 'text':
         print(f"processor.py:212 [{datetime.now().isoformat()}] - _process_content: Processing text-only message")
@@ -623,6 +625,7 @@ async def _process_content(message, reply, content_type, content_data=None):
         #tags = message_tags(message)
         tags = [""]
         word_for_check = ""
+        vector, embedding_model = embed(message.content)
     
     else:
         print(f"processor.py:219 [{datetime.now().isoformat()}] - _process_content: ERROR - Unknown content_type: {content_type}")
@@ -634,7 +637,6 @@ async def _process_content(message, reply, content_type, content_data=None):
     message_date = message.created_at
     
     print(f"processor.py:225 [{datetime.now().isoformat()}] - _process_content: Calling embed for content")
-    vector, embedding_model = embed(message.content)
     orig_text = message.content
     
     message_data = {
