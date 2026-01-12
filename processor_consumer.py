@@ -134,7 +134,8 @@ def on_message(ch, method, properties, body):
         import asyncio
         message_data = json.loads(body)
         message_id = message_data.get('id')
-        print(f"Processing message {message_id}")
+        message_date = message_data.get('created_at')
+        print(f"Processing message {message_id}, {message_date}")
         
         asyncio.run(process_queue_message(message_data))
         
